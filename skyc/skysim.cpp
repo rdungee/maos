@@ -493,7 +493,7 @@ static void skysim_prep_sde(SIM_S *simu){
     }
     
     dfree(x);
-    if(parms->skyc.dbg || 1){
+    if(parms->skyc.dbg){
 	writebin(simu->sdecoeff, "coeff");
 	writebin(simu->psdi, "psdi");
     }

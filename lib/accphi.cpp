@@ -409,11 +409,11 @@ void prop(thread_t *data){
 DEF_ENV_FLAG(PROP_GRID_MAP_OPTIM, 1);
 
 #define TRANSPOSE 0
-#include "prop_grid.c"
+#include "prop_grid.cpp"
 #undef  TRANSPOSE
 
 #define TRANSPOSE 1
-#include "prop_grid.c"
+#include "prop_grid.cpp"
 #undef  TRANSPOSE
 
 /**

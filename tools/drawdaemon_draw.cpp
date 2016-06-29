@@ -25,8 +25,8 @@
   2) Draw the cached surface to the real surface with zoom or displacement when user requests.
 */
 const double stroke_dot[2]={1,5};
-const double stroke_dash[2]={10,10};
-const double stroke_solid[2]={10,0};
+//const double stroke_dash[2]={10,10};
+//const double stroke_solid[2]={10,0};
 int maxtic_x=12;/*Maximum number of tics along x */
 int maxtic_y=12;/*Maximum number of tics along y */
 
@@ -868,7 +868,7 @@ void cairo_draw(cairo_t *cr, drawdata_t *drawdata, int width, int height){
 	snprintf(ticval,80,"%g",(xlog?pow(10,ticv):ticv));
 	pango_text(cr, layout, xpos, yoff+heightim+font_size*0.6+ticskip+1,ticval, 0.5, 0.5, 0);
     }
-    if(xlog || 1){//draw the minor ticks
+    {//draw the minor ticks
 	cairo_save(cr);
 	for(int itic=-1; itic<ntic; itic++){
 	    double ticv=(tic1+dtic*itic);
@@ -912,7 +912,7 @@ void cairo_draw(cairo_t *cr, drawdata_t *drawdata, int width, int height){
 	snprintf(ticval,80,"%g",(ylog?pow(10,ticv):ticv));
 	pango_text(cr,layout,xoff-font_size*0.6-ticskip+1, ypos,ticval,0.5,0.5,1);
     }
-    if(ylog || 1){//draw minor ticks
+    {//draw minor ticks
 	cairo_save(cr);
 	for(int itic=-1; itic<ntic; itic++){
 	    double ticv=(tic1+dtic*itic);

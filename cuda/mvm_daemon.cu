@@ -19,13 +19,11 @@
 #include "utils.h"
 #include "curmat.h"
 #include "cucmat.h"
-extern "C"{
 #include "../maos/mvm_client.h"
 #include <sys/file.h>
 #include <netinet/tcp.h> /*SOL_TCP */
 #include <netinet/in.h>
 #include <errno.h>
-}
 #include "cudata.h"
 
 /**

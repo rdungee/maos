@@ -24,7 +24,7 @@
 #include "mathdef.h"
 #include "suitesparse.h"
 #include "defs.h"
-#include "suitesparse.c"
+#include "suitesparse.cpp"
 #define assert_sp(A) assert(!A || A->id==M_SPT)
 /**
    Create a nx*ny X(sp) matrix with memory for nmax max

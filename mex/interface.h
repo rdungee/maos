@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 #include <setjmp.h>
+#include <cmath>
 #if __GNUC__ && defined(__STDC_UTF_16__) && !defined(__cplusplus)
 typedef int16_t char16_t;
 #endif

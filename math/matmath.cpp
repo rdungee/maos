@@ -1297,7 +1297,7 @@ void X(cwlog)(X(mat) *A){
    (coordinate rotate theta CCW) around the fft center. Used to rotate the PSF
    from x-y to radial-azimuthal coordinate in radial format CCD. A may be bigger or smaller than B.
    \todo{
-   merge this definition with cembed in cmat.c
+   merge this definition with cembed in cmat.cpp
    }
 */
 

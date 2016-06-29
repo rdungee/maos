@@ -79,4 +79,4 @@ X(mat) *X(readdata)(file_t *fp, header_t *header){
     }
     return out;
 }
-#include "matmmap.c"
+#include "matmmap.cpp"

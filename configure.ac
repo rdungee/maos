@@ -1,5 +1,5 @@
 AC_PREREQ(2.57)
-AC_INIT(maos, 2.0.0, lianqiw@gmail.com)
+AC_INIT(maos, 2.1.0, lianqiw@gmail.com)
 AM_INIT_AUTOMAKE([1.9.6 gnu -Wall no-define subdir-objects])
 #silent building
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])]) 
@@ -8,26 +8,24 @@ BASEURLS=
 BASEURLS+=" https://github.com/lianqiw/files/raw/master/"
 BASEURLS+=" https://sourceforge.net/projects/lianqiw/files/external"
 BASEURLS+=" https://bitbucket.org/lianqiw/files/downloads/"
-#If user does not supply any CFLAGS, set something so that AC_PROG_CC won't put a -g -O2 to CFLAGS
-if test -z "$CFLAGS" ;then
-    CFLAGS=" "
+#If user does not supply any CXXFLAGS, set something so that AC_PROG_CC won't put a -g -O2 to CXXFLAGS
+if test -z "$CXXFLAGS" ;then
+    CXXFLAGS=" "
 fi
 if test -z "$LIBS" ;then
     LIBS=" "
 fi
 AC_CONFIG_MACRO_DIR([m4])
-#After enable HEADER, the package name will not appear in CFLAGS. Appear in config.h instead.
+#After enable HEADER, the package name will not appear in CXXFLAGS. Appear in config.h instead.
 AC_CONFIG_HEADER([config.h])
 #defines host host_os host_cpu host_vendor etc
 AC_CANONICAL_HOST
-AC_LANG([C])
-AC_TYPE_SIZE_T #it sets CC if empty
-AC_PROG_CC([$CC])
-AM_PROG_CC_C_O
-#AC_PROG_CC_STDC #enable the current c standard, which is c99 circa 2014
-AC_PROG_CC_C99  #enable C99
-#AC_PROG_CXX([$CXX])
+AC_LANG([C++])
+AC_PROG_CXX([$CXX])
+AC_PROG_CXX_C_O
+AX_CXX_COMPILE_STDCXX_11 #REQUIRE C++11. No need argument.
 AC_OPENMP
+AC_TYPE_SIZE_T #it sets CXX if empty
 #The following must be after AC_PROG_CC
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
@@ -62,9 +60,9 @@ AC_DEFINE_UNQUOTED(SRCDIR,  ["$SRC_DIR"], ["Define SRC folder"])
 AC_DEFINE_UNQUOTED(BUILDDIR,["$BUILD_DIR"],["Define BUILD folder"])
 
 #find the real flavor of CC
-if $CC -v 2>&1 |grep clang ;then
+if $CXX -v 2>&1 |grep clang ;then
     CN=CLANG
-elif $CC -v 2>&1 |grep icc ;then
+elif $CXX -v 2>&1 |grep icc ;then
     CN=ICC
 else
     CN=GCC
@@ -129,7 +127,7 @@ AC_ARG_ENABLE(scheduler,AS_HELP_STRING([--disable-scheduler],["Disable built in 
 AC_ARG_ENABLE(websockets,AS_HELP_STRING([--disable-websockets],[Disable websockets (default: enabled)]), [use_websockets="$enableval"], [use_websockets="yes"])
 AC_ARG_ENABLE(mkl, AS_HELP_STRING([--enable-mkl], ["Prefer to use MKL"]), [use_mkl="$enableval"], [use_mkl="default"])
 AC_ARG_WITH(cuda, AS_HELP_STRING([--with-cuda[=DIR]],[With cuda support]), [CUDADIR=${withval}], [CUDADIR="$CUDADIR_AUTO"])
-AC_ARG_WITH(ccbin, AS_HELP_STRING([--with-ccbin=CC,],[Specify CCBIN for nvcc]), [CCBIN=${withval}], [CCBIN=${CC}])
+AC_ARG_WITH(ccbin, AS_HELP_STRING([--with-ccbin=CXX,],[Specify CCBIN for nvcc]), [CCBIN=${withval}], [CCBIN=${CXX}])
 AC_ARG_WITH(gtk,  AS_HELP_STRING([--with-gtk[=DIR]],[Enable gtk support]), [GTKDIR=${withval}], [GTKDIR=])
 AC_ARG_ENABLE(gtk-3, AS_HELP_STRING([--enable-gtk-3],[Using GTK+-3]), [use_gtk_3="$enableval"], [use_gtk_3="default"])
 AC_ARG_WITH(matlab, AS_HELP_STRING([--with-matlab[=DIR]],[Enable compiling mex routines for matlab]), [MEXDIR=${withval}], [MEXDIR=${MEXDIR_AUTO}])
@@ -162,7 +160,7 @@ DEBUG_ICC="$COMMON_ICC $DEBUG_ALL"
 DEBUG_GCC="$COMMON_GCC $DEBUG_ALL -ggdb"
 DEBUG_CLANG="$COMMON_CLANG $DEBUG_ALL"
 
-CFLAGS+=" -fPIC"
+CXXFLAGS+=" -fPIC"
 #inline definition:
 
 #in GCC, extern inline will use the inline and not emit function definition.
@@ -173,19 +171,19 @@ CFLAGS+=" -fPIC"
 #always_inline causes inline to be done in debug mode.
 case "$CN" in
     ICC)
-	CC_VERSION=$($CC -dumpversion)
+	CC_VERSION=$($CXX -dumpversion)
 	if test -n "$CC_VERSION" ;then
 	    major=${CC_VERSION%%.*}
 	    minor=${CC_VERSION#*.}
 	    minor=${minor%%.*}
 	    if test $major -lt 11 ;then
-		unset OPENMP_CFLAGS
+		unset OPENMP_CXXFLAGS
 	    fi
 	fi
 	;;
     GCC)
 	#Test GCC version
-	CC_VERSION=$($CC -dumpversion)
+	CC_VERSION=$($CXX -dumpversion)
 	if test -n "$CC_VERSION" ;then
 	    major=${CC_VERSION%%.*}
 	    minor=${CC_VERSION#*.}
@@ -205,13 +203,13 @@ case "$CN" in
 	    #fi
 	    #GCC introduced openmp task in 4.4
 	    if test $major -lt 4 -o $minor -lt 4 ;then
-		unset OPENMP_CFLAGS
+		unset OPENMP_CXXFLAGS
 	    fi
 	fi
 	;;
     CLANG)
 	if test "$system" = "apple" ;then
-	    CFLAGS+=" -stdlib=libc++"
+	    CXXFLAGS+=" -stdlib=libc++"
 	fi
 	;;
     *)
@@ -230,10 +228,10 @@ optname=${ccprefix}_${CN}
 OPTScc=${!optname}
 unset optname
 
-if test -z "$OPENMP_CFLAGS" ;then
-    CFLAGS+=" -pthread" #enables pthreads feature and links in the library
+if test -z "$OPENMP_CXXFLAGS" ;then
+    CXXFLAGS+=" -pthread" #enables pthreads feature and links in the library
 else
-    CFLAGS+=" $OPENMP_CFLAGS"
+    CXXFLAGS+=" $OPENMP_CXXFLAGS"
 fi
 OPTSextra=""
 
@@ -254,9 +252,9 @@ case "$host_os" in
 	AM_CONDITIONAL(LINUX, true)
 	LDEXE+=" -lrt" #need real time library.
 	LDOPTS+=" -Wl,--no-as-needed" #as-needed is default in some system (ubuntu) and cause mkl library checking to fail
-	CFLAGS_EXTRA="-g -D_XOPEN_SOURCE=500 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112L"
+	CXXFLAGS_EXTRA="-g -D_XOPEN_SOURCE=500 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200112L"
 	if test "$use_release" = "yes" ;then
-	    CFLAGS+=" -D_GLIBC_2_5_SOURCE"
+	    CXXFLAGS+=" -D_GLIBC_2_5_SOURCE"
 	fi
 	if test "${host_cpu}" = "x86_64" ;then
 	    libsuffix="64"
@@ -269,14 +267,14 @@ case "$host_os" in
 	;;
     *darwin*)
 	AM_CONDITIONAL(DARWIN, true)
-	CFLAGS_EXTRA=
+	CXXFLAGS_EXTRA=
 	mkl_avail="no"
 	libsuffix=fat
 	system="apple"
 	ldsuffix="dylib"
 	#for compatibility with OS X >=10.6. Don't use 10.5 which will render mex files not usable.
 	if test "$use_release" = "yes" ;then
-	    CFLAGS+=" -mmacosx-version-min=10.7"
+	    CXXFLAGS+=" -mmacosx-version-min=10.7"
 	fi
 	;;
     *bsd*)
@@ -302,16 +300,21 @@ PRE_DIR="${HOME}/.aos/"          #prefix for installation
 TMP_DIR="${BUILD_DIR}/external/" #temporary directory for compiling
 LIB_DIR="${PRE_DIR}/lib${libsuffix}" #external library
 LDFLAGS+=" -L${LIB_DIR} -Wl,-rpath,${LIB_DIR}" #-avoid-version
-CFLAGS+=" -I${PRE_DIR}/include "
+CXXFLAGS+=" -I${PRE_DIR}/include "
 DOWNLOAD_DIR="${TMP_DIR}/downloads"
-OPTS+=" $CFLAGS_EXTRA "
+OPTS+=" $CXXFLAGS_EXTRA "
 
 if test "$host_cpu" = "x86_64" ;then
+    CXXFLAGS+=" -DDLONG "
     CFLAGS+=" -DDLONG "
     mflag="-m64"
 else
+    CXXFLAGS+=" -D_FILE_OFFSET_BITS=64" #to fix error about stat() in 32bit.
     CFLAGS+=" -D_FILE_OFFSET_BITS=64" #to fix error about stat() in 32bit.
     mflag="-m32"
+fi
+if ! echo $CXXFLAGS | grep -q -- "$mflag" ;then #don't repeat mflag
+    CXXFLAGS=" $mflag $CXXFLAGS"
 fi
 if ! echo $CFLAGS | grep -q -- "$mflag" ;then #don't repeat mflag
     CFLAGS=" $mflag $CFLAGS"
@@ -443,7 +446,7 @@ function set_lapack(){
 		LAPACK+=" -lmkl_intel"
 	    fi
 	    LAPACK+=" -lmkl_core"
-	    if test -n "$OPENMP_CFLAGS" ;then
+	    if test -n "$OPENMP_CXXFLAGS" ;then
 		if test "$CN" = "ICC" ;then
 		    LAPACK+=" -lmkl_intel_thread"
 		elif test "$CN" = "GCC" ;then
@@ -531,13 +534,13 @@ fi
 
 #Check for FFTW3 header and library.
 AC_CHECK_LIB([fftw3], [fftw_execute],[has_fftw="yes"],[has_fftw='no'])
-AC_CHECK_HEADERS([fftw3.h],[], [has_fftw='no'])
+#AC_CHECK_HEADERS([fftw3.h],[], [has_fftw='no'])
 if test "$has_fftw" = "no" ;then #fftw does not exist in system.
-    FLAGS="--enable-threads --enable-shared --enable-static"
+    FFTW_FLAGS="--enable-threads --enable-shared --enable-static"
     if test -n "$OPENMP_FLAGS" ;then
-        FLAGS+=" --enable-openmp"
+        FFTW_FLAGS+=" --enable-openmp"
     fi
-    compile FFTW fftw.tar.bz2 $FLAGS
+    compile FFTW fftw.tar.bz2 $FFTW_FLAGS
     #compile FFTW fftw.tar.bz2 --enable-float 
     unset ac_cv_lib_fftw3_fftw_execute
     AC_CHECK_LIB([fftw3], [fftw_execute],[],[AC_MSG_ERROR([Invalid FFTW library])])
@@ -557,14 +560,14 @@ else
 fi
 fftw_threads=1
 if test "$with_matlab" = "no"  ;then
-    if test -n "$OPENMP_CFLAGS" ;then
-	AC_CHECK_LIB([fftw3_omp], [fftw_init_threads], [LDFFT+=" -lfftw3_omp"], [fftw_threads=0], [-lfftw3 $OPENMP_CFLAGS])
+    if test -n "$OPENMP_CXXFLAGS" ;then
+	AC_CHECK_LIB([fftw3_omp], [fftw_init_threads], [LDFFT+=" -lfftw3_omp"], [fftw_threads=0], [-lfftw3 $OPENMP_CXXFLAGS])
     else
 	AC_CHECK_LIB([fftw3_threads], [fftw_init_threads], [LDFFT+=" -lfftw3_threads"], [fftw_threads=0], [-lfftw3 -lpthread])
     fi
     if test x$has_fftwf = x1 ;then
-	if test -n "$OPENMP_CFLAGS" ;then
-	    AC_CHECK_LIB([fftw3f_omp], [fftwf_init_threads], [LDFFT+=" -lfftw3f_omp"], [fftw_threads=0], [-lfftw3f $OPENMP_CFLAGS])
+	if test -n "$OPENMP_CXXFLAGS" ;then
+	    AC_CHECK_LIB([fftw3f_omp], [fftwf_init_threads], [LDFFT+=" -lfftw3f_omp"], [fftw_threads=0], [-lfftw3f $OPENMP_CXXFLAGS])
 	else
 	    AC_CHECK_LIB([fftw3f_threads], [fftwf_init_threads], [LDFFT+=" -lfftw3f_threads"], [fftw_threads=0], [-lfftw3f -lpthread])
 	fi
@@ -576,7 +579,7 @@ AC_DEFINE_UNQUOTED(BUILTIN_FFTW_THREADS, [$fftw_threads], "Built-in FFTW3 thread
 
 #Check for cholmod
 AC_CHECK_LIB([cholmod], [${chol_fun}], [], [has_chol="no"], [$LAPACK -lm])
-AC_CHECK_HEADERS([cholmod.h], [], [has_chol="no"])
+#AC_CHECK_HEADERS([cholmod.h], [], [has_chol="no"])
 if test "$has_chol" = "no" ;then
     compile CHOLMOD cholmod.tar.bz2
     unset ac_cv_lib_cholmod_${chol_fun}
@@ -588,7 +591,7 @@ LDCHOL="-lcholmod"
 AM_CONDITIONAL(HAS_LWS, false)
 if test "$use_websockets" = "yes" ;then
     AC_CHECK_LIB([websockets], [libwebsocket_service], [has_lws="yes"], [has_lws="no"], [])
-    AC_CHECK_HEADERS([libwebsockets.h], [], [has_lws="no"])
+    #AC_CHECK_HEADERS([libwebsockets.h], [], [has_lws="no"])
     if test "$has_lws" = "no" ;then #first try to compile from source. Needs cmake
 	compile LIBWEBSOCKETS libwebsockets.tar.bz2 -DLIB_SUFFIX=${libsuffix} -DLWS_WITH_SSL=OFF -DLWS_IPV6=OFF -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITHOUT_DAEMONIZE=ON -DLWS_WITHOUT_CLIENT=ON -DLWS_WITHOUT_DEBUG=ON
 	unset ac_cv_lib_websockets_libwebsocket_service
@@ -649,14 +652,7 @@ if test "$with_gtk" != "no" ;then
 	GTK_CFLAGS=""
 	GTK_LIBS=""
     fi
-    if false ;then
-	#Temporarily include GTK_CFLAGS in CFLAGS to enable header search.
-	CFLAGS_SAVE=$CFLAGS
-	CFLAGS="$CFLAGS $GTK_CFLAGS $MON_CFLAGS"
-	AC_CHECK_HEADERS([gtk/gtk.h], [], [comp_draw="no"; comp_mon="no"])
-	AC_CHECK_HEADERS([libnotify/notify.h], [], [comp_monn="no"])
-	CFLAGS=$CFLAGS_SAVE
-    fi
+ 
     AM_CONDITIONAL(DRAW, test x$comp_draw = xyes)
     AM_CONDITIONAL(MON,  test x$comp_mon  = xyes)
     AM_CONDITIONAL(MONN, test x$comp_monn = xyes)
@@ -683,7 +679,7 @@ if test "$with_gtk" != "no" ;then
     AC_SUBST(GTK_LIBS)
 fi
 
-AC_CHECK_HEADERS([unistd.h])
+#AC_CHECK_HEADERS([unistd.h])
 OPTS+=" $OPTScommon $OPTScc $OPTSprof $OPTSextra"
 
 
@@ -750,7 +746,7 @@ if test "$with_matlab" != "no" ;then
 	AC_CHECK_LIB([mx], [mxGetPr], [mex_lib="yes"], [mex_lib="no"], [$LDMEX])
     fi
     if test x$mex_lib = xyes ;then
-    	MEXOPT="${MEXOPT} -I${MEXDIR}/../extern/include -DMATLAB_MEX_FILE $OPENMP_CFLAGS" 
+    	MEXOPT="${MEXOPT} -I${MEXDIR}/../extern/include -DMATLAB_MEX_FILE $OPENMP_CXXFLAGS" 
 	LIBMEX=" -lmwlapack -lmwblas -lmx -lmex -lmat -lut -lstdc++ -lz -lm -ldl -lfftw3"
 	#some MATLAB distribution has libmwfftw3.so, some only has libmwfftw3.so.3
 	#AC_CHECK_LIB([mwfftw3], [fftw_execute], [LIBMEX+=" -lmwfftw3"], [LIBMEX+=" -l:libmwfftw3.so.3"], [$LDMEX])
@@ -814,7 +810,7 @@ if test "$with_cuda" != "no" ;then
     if test -f "${CUDADIR}/include/cuda.h" ;then
 	CUDAOPT="-I${CUDADIR}/include"
     else
-	AC_CHECK_HEADERS([cuda.h], [] ,[AC_MSG_NOTICE([Header not found]);with_cuda="no"])
+	#AC_CHECK_HEADERS([cuda.h], [] ,[AC_MSG_NOTICE([Header not found]);with_cuda="no"])
 	CUDAOPT=
     fi
     if test "$with_cuda" = "no" ;then
@@ -830,7 +826,7 @@ if test "$with_cuda" != "no" ;then
     cudaver="$($NVCC -V |grep release |cut -d ',' -f 2 |cut -d ' ' -f 3)"
     cudaver="${cudaver/.}"
     echo CUDA toolkit is $cudaver
-    NVCC+=" $CFLAGS_CPU"
+    NVCC+=" $CXXFLAGS_CPU"
     if test -n "$CCBIN" -a "$with_ccbin" != "no" ;then
 	CCBIN="${CCBIN%% *}"
 	NVCC+=" -ccbin ${CCBIN%% *}"
@@ -847,8 +843,8 @@ if test "$with_cuda" != "no" ;then
     if test "$cudaver" -ge 65 ;then
         CUDAOPT="$CUDAOPT -gencode arch=compute_52,code=sm_52"
     fi
-    #if test -n "$OPENMP_CFLAGS";then
-    #    CUDAOPT="$CUDAOPT -Xcompiler $OPENMP_CFLAGS"
+    #if test -n "$OPENMP_CXXFLAGS";then
+    #    CUDAOPT="$CUDAOPT -Xcompiler $OPENMP_CXXFLAGS"
     #fi
     if test "$debug" = "yes" ;then
         CUDAOPT+=" -O0"
@@ -860,7 +856,7 @@ if test "$with_cuda" != "no" ;then
     if test "$host_cpu" = "x86_64" ;then
         CUDAOPT+=" -DDLONG"
     fi
-    CCBINOPT="$OPTScommon $OPTSprof $OPTSextra -fPIC $CFLAGS -Wno-unused-parameter"
+    CCBINOPT="$OPTScommon $OPTSprof $OPTSextra -fPIC $CXXFLAGS -Wno-unused-parameter"
     CCBINOPT="${CCBINOPT/-fpermissive/}"
     LIBCUDA+=" -lcurand -lcusparse -lcufft -lcublas -lcudart"
     if $CCBIN -v 2>&1 |grep clang ;then
@@ -950,8 +946,8 @@ echo host_os=$host_os
 echo BIGENDIAN=$BIGENDIAN
 echo use_static=$use_static
 
-echo CC=$CC
-echo CFLAGS=$CFLAGS
+echo CXX=$CXX
+echo CXXFLAGS=$CXXFLAGS
 echo LDFLAGS=$LDFLAGS
 echo OPTS=$OPTS
 echo LDOPTS=$LDOPTS

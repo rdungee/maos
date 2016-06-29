@@ -287,7 +287,7 @@ void moao_recon(SIM_T *simu){
 	    dcellzero(rhs);
 	    moao_FitR(&rhs, recon, parms, imoao, 
 		      parms->evl.thetax->p[ievl], parms->evl.thetay->p[ievl],
-		      INFINITY, simu->opdr, dmcommon, (parms->plot.run||1)?&rhsout:NULL, 1);
+		      INFINITY, simu->opdr, dmcommon, &rhsout, 1);
 	    
 	    pcg(&dmmoao, moao_FitL, &recon->moao[imoao], NULL, NULL, rhs,
 		parms->recon.warm_restart, parms->fit.maxit);

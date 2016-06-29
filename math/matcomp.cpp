@@ -79,20 +79,19 @@ void X(cwmd)(X(mat) *restrict A, const XR(mat) *restrict B, const R alpha){
    without rotation takes 0.161 ms.
    with rotation takes 0.330 ms.
 */
-void X(embed_wvf)(X(mat) *restrict A, const R *opd, const R *amp,
-		  const int nopdx, const int nopdy, 
+void X(embed_wvf)(X(mat) *restrict psf, const R *opd, const R *amp,
+		  const long nopdx, const long nopdy, 
 		  const R wvl, const R theta){
-    T *psf=A->p;
-    const int npsfx=A->nx;
-    const int npsfy=A->ny;
- 
+    X(zero)(psf);
+    const int npsfx=psf->nx;
+    const int npsfy=psf->ny;
     R wvk=2.*M_PI/wvl;
-    memset(psf, 0, sizeof(T)*npsfx*npsfy);
+
     if(fabs(theta)<1.e-10){/*no rotation. */
 	const int skipx=(npsfx-nopdx)/2;
 	const int skipy=(npsfy-nopdy)/2;
 	assert(skipx>=0 && skipy>=0);
-	T *psf0=psf+skipy*npsfx+skipx;
+	T *psf0=PIND(psf, skipx, skipy);
 	for(long iy=0; iy<nopdy; iy++){
 	    T *psfi=psf0+iy*npsfx;
 	    const R *opdi=opd+iy*nopdx;
@@ -112,9 +111,8 @@ void X(embed_wvf)(X(mat) *restrict A, const R *opd, const R *amp,
 	/*
 	  The original method of adding in to out is not right.
 	*/
-	T (*psfs)[npsfx]=(T(*)[npsfx])psf;
-	R (*amps)[nopdx]=(R(*)[nopdx])amp;
-	R (*opds)[nopdx]=(R(*)[nopdx])opd;
+	XR(mat) *amps=XR(new_ref)(nopdx, nopdy, (R*)amp);
+	XR(mat) *opds=XR(new_ref)(nopdx, nopdy, (R*)opd);
 	const R ctheta=cos(theta);
 	const R stheta=sin(theta);
 	const int nopdx2=nopdx/2;
@@ -135,18 +133,20 @@ void X(embed_wvf)(X(mat) *restrict A, const R *opd, const R *amp,
 		    int iy2=ifloor(y2);
 		    x2=x2-ix2;
 		    y2=y2-iy2;
-		    R iopd=opds[iy2][ix2]*(1.-x2)*(1.-y2)
-			+opds[iy2][ix2+1]*(x2*(1.-y2))
-			+opds[iy2+1][ix2]*((1-x2)*y2)
-			+opds[iy2+1][ix2+1]*(x2*y2);
-		    R iamp=amps[iy2][ix2]*(1.-x2)*(1.-y2)
-			+amps[iy2][ix2+1]*(x2*(1.-y2))
-			+amps[iy2+1][ix2]*((1-x2)*y2)
-			+amps[iy2+1][ix2+1]*(x2*y2);
-		    psfs[iy][ix]=iamp*EXPI(wvk*iopd);
+		    R iopd=IND(opds,ix2,iy2)*(1.-x2)*(1.-y2)
+			+IND(opds,ix2+1,iy2)*(x2*(1.-y2))
+			+IND(opds,ix2,iy2+1)*((1-x2)*y2)
+			+IND(opds,ix2+1,iy2+1)*(x2*y2);
+		    R iamp=IND(amps, ix2, iy2)*(1.-x2)*(1.-y2)
+			+IND(amps,ix2+1, iy2)*(x2*(1.-y2))
+			+IND(amps,ix2,iy2+1)*((1-x2)*y2)
+			+IND(amps,ix2+1,iy2+1)*(x2*y2);
+		    IND(psf,ix,iy)=iamp*EXPI(wvk*iopd);
 		}
 	    }
 	}
+	XR(free)(amps);
+	XR(free)(opds);
     }
 }
 #define cmpcpy(A,B,S) memcpy(A,B,S*sizeof(T)); /**<macro to do copying*/
@@ -584,8 +584,8 @@ void X(tilt2)(X(mat) *otf, X(mat) *otfin, R sx, R sy, int pinct){
     int ny=otf->ny;
     R dux=1./(R)nx;
     R duy=1./(R)ny;
-    T ux[nx];
-    T uy[ny];
+    T *ux=new T[nx];
+    T *uy=new T[ny];
     T cx=EXPI(-2*M_PI*dux*sx);
     T cy=EXPI(-2*M_PI*duy*sy);
     //warning_once("Consider caching ux, uy\n");
@@ -629,6 +629,8 @@ void X(tilt2)(X(mat) *otf, X(mat) *otfin, R sx, R sy, int pinct){
 	    }
 	}
     }
+    delete[] ux;
+    delete[] uy;
 }
 /**
    Inplace tilt the otf to make the image shift. 

@@ -203,13 +203,13 @@ void wait_cpu(int nthread){
     close(fd);/*remove lock */
 }
 #if defined(__APPLE__)
-#include "process_apple.c"
+#include "process_apple.cpp"
 #elif defined(__linux__)
-#include "process_linux.c"
+#include "process_linux.cpp"
 #elif defined(__CYGWIN__)
-#include "process_cygwin.c"
+#include "process_cygwin.cpp"
 #elif defined(__FreeBSD__)||defined(__NetBSD__)
-#include "process_bsd.c"
+#include "process_bsd.cpp"
 #else
 #error("Unknown plateform")
 #endif

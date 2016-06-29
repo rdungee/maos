@@ -20,16 +20,10 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-#ifdef __cplusplus
-extern "C"{
-#endif
-    void *calloc_maos(size_t, size_t);
-    void *malloc_maos(size_t);
-    void *realloc_maos(void *, size_t);
-    void  free_maos(void *);
-#ifdef __cplusplus
-}
-#endif
+void *calloc_maos(size_t, size_t);
+void *malloc_maos(size_t);
+void *realloc_maos(void *, size_t);
+void  free_maos(void *);
 #define myalloca(nelem, type) (type*)alloca(nelem*sizeof(type))
 #define mycalloc(nelem, type) (type*)calloc(nelem,sizeof(type))
 #define mymalloc(nelem, type) (type*)malloc(nelem*sizeof(type))

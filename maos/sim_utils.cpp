@@ -151,14 +151,12 @@ static void blend_screen_side(map_t *atm1, map_t *atm2, long overx, long overy){
 	double wty=sa<0?1:0;
 	double *p1=atm1->p+(1-(long)wty)*offy;
 	double *p2=atm2->p+(long)wty*offy;
-	double (*pp1)[nx]=(double(*)[nx])p1;
-	double (*pp2)[nx]=(double(*)[nx])p2;
 	double overyd=(double)overy;
 	for(long iy=0; iy<overy; iy++){
 	    double wt1=fabs(wty-(double)(iy+1)/overyd);
 	    for(long ix=0; ix<nx; ix++){
-		pp1[iy][ix]=(1-wt1)*pp1[iy][ix]+wt1*pp2[iy][ix];
-		pp2[iy][ix]=pp1[iy][ix];
+		p1[iy*nx+ix]=(1-wt1)*p1[iy*nx+ix]+wt1*p2[iy*nx+ix];
+		p2[iy*nx+ix]=p1[iy*nx+ix];
 	    }
 	}
     }else if(sa==0){
@@ -168,8 +166,6 @@ static void blend_screen_side(map_t *atm1, map_t *atm2, long overx, long overy){
 	double wtx=ca<0?1:0;
 	double *p1=atm1->p+(1-(long)wtx)*offx;
 	double *p2=atm2->p+(long)wtx*offx;
-	double (*pp1)[nx]=(double(*)[nx])p1;
-	double (*pp2)[nx]=(double(*)[nx])p2;
 	double wts[overx];
 	double overxd=(double)overx;
 	for(long ix=0; ix<overx; ix++){
@@ -177,8 +173,8 @@ static void blend_screen_side(map_t *atm1, map_t *atm2, long overx, long overy){
 	}
 	for(long iy=0; iy<ny; iy++){
 	    for(long ix=0; ix<overx; ix++){
-		pp1[iy][ix]=(1-wts[ix])*pp1[iy][ix]+wts[ix]*pp2[iy][ix];
-		pp2[iy][ix]=pp1[iy][ix];
+		p1[iy*nx+ix]=(1-wts[ix])*p1[iy*nx+ix]+wts[ix]*p2[iy*nx+ix];
+		p2[iy*nx+ix]=p1[iy*nx+ix];
 	    }
 	}
     }else{

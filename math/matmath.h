@@ -134,7 +134,7 @@
     void X(cwmc)(X(mat) *restrict A, const X(mat) *restrict B, const R alpha); \
     void X(cwmd)(X(mat) *restrict A, const XR(mat) *restrict B, const R alpha); \
     void X(embed_wvf)(X(mat) *restrict A, const R *opd, const R *amp,	\
-		      const int nopdx, const int nopdy,			\
+		      const long nopdx, const long nopdy,			\
 		      const R wvl, const R theta);			\
     void X(embedc)(X(mat) *restrict A, const X(mat) *restrict B, const R theta,CEMBED flag); \
     void X(embedd)(X(mat) *restrict A, XR(mat) *restrict B, const R theta); \

@@ -21,14 +21,8 @@
 #include "wfs.h"
 #include "cudata.h"
 #include "cucmat.h"
-#ifdef __cplusplus
-extern "C"{
-#endif
 #include "../maos/pywfs.h"
 #include "../maos/sim.h"
-#ifdef __cplusplus
-}
-#endif
 
 __global__ static void
 pywfs_grad_do(Real *grad, const Real *ints, const Real *saa, const Real *isum, const Real *goff, Real gain, int nsa){

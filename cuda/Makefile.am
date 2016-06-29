@@ -1,4 +1,4 @@
-AM_CFLAGS=$(OPTS) -I $(top_srcdir)
+AM_CXXFLAGS=$(OPTS) -I $(top_srcdir)
 AM_LDFLAGS=$(LDOPTS) 
 #In the order of include:
 HEADER_LIB=common.h types.h cucmat.h  cumat.h  curmat.h gpu.h kernel.h utils.h prop_wrap.h
@@ -31,7 +31,7 @@ libaogpu_la_LDFLAGS=$(LDOPTS)
 LDADD=libaogpu.la $(LIBCUDA) $(LDEXE_FULL)
 bin_PROGRAMS=../test/test_cuda ../bin/gpu_mvm
 ___test_test_cuda_SOURCES=test.cu 
-___bin_gpu_mvm_SOURCES=gpu_mvm.c
+___bin_gpu_mvm_SOURCES=gpu_mvm.cpp
 
 #The following does the depency generation/tracking and verbosity right.
 .cu.o:
@@ -40,7 +40,7 @@ ___bin_gpu_mvm_SOURCES=gpu_mvm.c
 	@$(NVCC) $(CUDAOPT) -M $< -MT $@ > $(DEPDIR)/$*.Po
 
 .cu.lo:
-	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(NVCC) $(CUDAOPT) --compiler-options "$(CCBINOPT) " -c $< -o $@ 
+	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(NVCC) $(CUDAOPT) --compiler-options "$(CCBINOPT) " -c $< -o $@ 
 	@$(NVCC) $(CUDAOPT) -M $< -MT $@ > $(DEPDIR)/$*.Po
 
 -include $(SRCS:%.cu=$(DEPDIR)/%.Po)

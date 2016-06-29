@@ -144,7 +144,7 @@ static vkcov_t* vkcov_calc(double r0, double L0, double dx, long n, long ninit){
 #define FRACTAL fractal_do
 #define INVERSE 0
 #define TRANSPOSE 0
-#include "fractal_do.c"
+#include "fractal_do.cpp"
 #undef FRACTAL
 #undef INVERSE
 #undef TRANSPOSE
@@ -152,7 +152,7 @@ static vkcov_t* vkcov_calc(double r0, double L0, double dx, long n, long ninit){
 #define FRACTAL fractal_inv
 #define INVERSE 1
 #define TRANSPOSE 0
-#include "fractal_do.c"
+#include "fractal_do.cpp"
 #undef FRACTAL
 #undef INVERSE
 #undef TRANSPOSE
@@ -160,7 +160,7 @@ static vkcov_t* vkcov_calc(double r0, double L0, double dx, long n, long ninit){
 #define FRACTAL fractal_trans
 #define INVERSE 0
 #define TRANSPOSE 1
-#include "fractal_do.c"
+#include "fractal_do.cpp"
 #undef FRACTAL
 #undef INVERSE
 #undef TRANSPOSE
@@ -169,7 +169,7 @@ static vkcov_t* vkcov_calc(double r0, double L0, double dx, long n, long ninit){
 #define FRACTAL fractal_inv_trans
 #define INVERSE 1
 #define TRANSPOSE 1
-#include "fractal_do.c"
+#include "fractal_do.cpp"
 #undef FRACTAL
 #undef INVERSE
 #undef TRANSPOSE

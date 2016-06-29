@@ -1,16 +1,13 @@
-
-
-
+extern "C" {
+#include <libwebsockets.h>
+}
 #include <getopt.h>
-
-
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <assert.h>
 #include <syslog.h>
 #include <sys/time.h>
 
-#include <libwebsockets.h>
 #include "../sys/sys.h"
 #include "scheduler_ws.h"
 /**

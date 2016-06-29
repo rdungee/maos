@@ -61,12 +61,10 @@ void psf2i0gxgy(dmat *i0, dmat *gx, dmat *gy, dmat *psf, DTF_S *dtf){
 */
 static void mki0shx(double *i0x1, double *i0x2, dmat *i0, double scale){
     int nx=i0->nx;
-    double (*i0x1p)[nx]=(double(*)[nx])i0x1;
-    double (*i0x2p)[nx]=(double(*)[nx])i0x2;
     for(int iy=0; iy<i0->ny; iy++){
 	for(int ix=0; ix<i0->nx-1; ix++){
-	    i0x1p[iy][ix+1]=IND(i0,ix,iy)*scale;
-	    i0x2p[iy][ix]=IND(i0,ix+1,iy)*scale;
+	    i0x1[iy*nx+ix+1]=IND(i0,ix,iy)*scale;
+	    i0x2[iy*nx+ix]=IND(i0,ix+1,iy)*scale;
 	}
     }
 }
@@ -75,12 +73,10 @@ static void mki0shx(double *i0x1, double *i0x2, dmat *i0, double scale){
 */
 static void mki0shy(double *i0y1, double *i0y2, dmat *i0, double scale){
     int nx=i0->nx;
-    double (*i0y1p)[nx]=(double(*)[nx])i0y1;
-    double (*i0y2p)[nx]=(double(*)[nx])i0y2;
     for(int iy=0; iy<i0->ny-1; iy++){
 	for(int ix=0; ix<i0->nx; ix++){
-	    i0y1p[iy+1][ix]=IND(i0,ix,iy)*scale;
-	    i0y2p[iy][ix]=IND(i0,ix,iy+1)*scale;
+	    i0y1[(iy+1)*nx+ix]=IND(i0,ix,iy)*scale;
+	    i0y2[iy*nx+ix]=IND(i0,ix,iy+1)*scale;
 	}
     }
 }
