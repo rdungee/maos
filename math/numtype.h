@@ -124,14 +124,14 @@ INLINE dcomplex operator-(float A, const dcomplex &B){
 INLINE dcomplex operator-(const dcomplex &B, float A){
     return B-(double)A;
 }
-/*
+#ifdef __linux__ //linux does not have this. mac does.
 INLINE double conj(double A){
     return A;
 }
 INLINE double real(double A){
     return A;
 }
-*/
+#endif
 #endif//#ifndef AOS_CUDA_GPU_H
 #else //#if defined(__cplusplus) C99 mode
 #include <tgmath.h> //never include tgmath.h in CUDA included headers.

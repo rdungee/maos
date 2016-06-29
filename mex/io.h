@@ -20,7 +20,7 @@
 #include <zlib.h>
 #include <signal.h>
 #include <cmath>
-#if __GNUC__ && defined(__STDC_UTF_16__) && !defined(__cplusplus)
+#if __GNUC__ && defined(__STDC_UTF_16__) && (!defined(__cplusplus) || (defined(__clang__) && defined(__linux)))
 typedef int16_t char16_t;
 #endif
 #include <string.h>
