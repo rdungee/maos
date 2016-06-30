@@ -89,7 +89,7 @@ __global__ static void mvm_g_mul_do(const Real *restrict mvm, ATYPE *restrict a,
     if(iact<nact){
 	acc[threadIdx.x]=0;
 	for(int ig=0; ig<ng; ig++){
-	    register Real mvmi=mvm[nact*ig+iact];
+	    Real mvmi=mvm[nact*ig+iact];
 	    acc[threadIdx.x]+=mvmi*(Real)(g[ig]);
 	}
 	a[iact]+=(ATYPE)acc[threadIdx.x];
@@ -171,7 +171,7 @@ static void mvm_thread(void* ithread0){
 	    break;
 	case CMD_DMADD:{
 	    for(int iact=iact1; iact<iact2; iact++){
-		register ATYPE temp=0;
+		ATYPE temp=0;
 		for(int igpu=0; igpu<NGPU; igpu++){
 		    temp+=mvm_data->ac[igpu][iact];
 		}

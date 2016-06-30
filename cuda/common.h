@@ -18,6 +18,7 @@
 #ifndef AOS_CUDA_COMMON_H
 #define AOS_CUDA_COMMON_H
 #include <cuda.h>
+#include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <cusparse_v2.h>
 #include <cufft.h>
@@ -78,8 +79,8 @@ extern "C"{
 typedef Real Real2[2];
 int cuda_free(void *p);
 /*static int tot_mem=0; */
-#undef cudaMalloc
-#undef cudaFree
+//#undef cudaMalloc
+//#undef cudaFree
 inline int CUDAMALLOC(void **p, size_t size){
     return cudaMalloc(p,size);
 }

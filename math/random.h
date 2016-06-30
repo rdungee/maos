@@ -123,16 +123,16 @@ typedef struct
 	value ^= MT_TEMPERING_SHIFT_L(value);				\
 	}								\
 	while (0)
-void mts_refresh(register mt_state* state);
+void mts_refresh(mt_state* state);
 #define mt_32_to_double (1./4294967296.)
 /* Multiplier to convert long to dbl [0,1)*/
 #define mt_64_to_double (1./18446744073709551616.)
 /* Mult'r to cvt long long to dbl */
 
 INLINE unsigned long mts_lrand(/*32 bit val */
-    register mt_state*	state)		/* State for the PRNG */
+    mt_state*	state)		/* State for the PRNG */
     {
-    register unsigned long random_value;	/* Pseudorandom value generated */
+    unsigned long random_value;	/* Pseudorandom value generated */
 
     if (state->stateptr <= 0)
 	mts_refresh(state);
@@ -142,9 +142,9 @@ INLINE unsigned long mts_lrand(/*32 bit val */
     return MT_FINAL_TEMPER(random_value);
     }
 INLINE double mts_drand( /*32 bit precision double. [0,1) */
-    register mt_state*	state)		/* State for the PRNG */
+    mt_state*	state)		/* State for the PRNG */
     {
-    register unsigned long random_value;	/* Pseudorandom value generated */
+    unsigned long random_value;	/* Pseudorandom value generated */
 
     if (state->stateptr <= 0)
 	mts_refresh(state);
@@ -155,13 +155,13 @@ INLINE double mts_drand( /*32 bit precision double. [0,1) */
     return random_value * mt_32_to_double;
     }
 INLINE double mts_ldrand( /*64 bit precision double */
-    register mt_state*	state)		/* State for the PRNG */
+    mt_state*	state)		/* State for the PRNG */
     {
 #if MT_MACHINE_BITS == 64
     unsigned long long	final_value;	/* Final (integer) value */
 #endif /* MT_MACHINE_BITS */
-    register unsigned long random_value_1;	/* 1st pseudorandom value generated */
-    register unsigned long random_value_2;	/* 2nd pseudorandom value generated */
+    unsigned long random_value_1;	/* 1st pseudorandom value generated */
+    unsigned long random_value_2;	/* 2nd pseudorandom value generated */
 
     /*
      * For maximum speed, we'll handle the two overflow cases

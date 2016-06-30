@@ -123,7 +123,7 @@ multimv_do(const Real *restrict mvm, ATYPE *restrict a, const GTYPE *restrict g,
     const int igi=(iset*ng)/nset;
     const int ngi=((iset+1)*ng)/nset;
     for(int ig=igi; ig<ngi; ig++){
-	register Real mvmi=mvm[nact*ig+iact];
+	Real mvmi=mvm[nact*ig+iact];
 	acc[threadIdx.x]+=mvmi*(Real)(g[ig]);
     }
     atomicAdd(&a[iact], (ATYPE)acc[threadIdx.x]);
@@ -135,7 +135,7 @@ multimv_do(const Real *restrict mvm, ATYPE *restrict a, const GTYPE *restrict g,
     if(iact<nact){
 	acc[threadIdx.x]=0;
 	for(int ig=0; ig<ng; ig++){
-	    register Real mvmi=mvm[nact*ig+iact];
+	    Real mvmi=mvm[nact*ig+iact];
 	    acc[threadIdx.x]+=mvmi*(Real)(g[ig]);
 	}
 	a[iact]+=(ATYPE)acc[threadIdx.x];

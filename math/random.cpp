@@ -111,14 +111,14 @@ static void mts_mark_initialized(mt_state* state /**< State vector to mark initi
 /**
    Refresh the state for next set of random numbers.
  */
-void mts_refresh(register mt_state* state /**< State for the PRNG */
+void mts_refresh(mt_state* state /**< State for the PRNG */
 		 ){
-    register int	i;		/* Index into the state */
-    register mt_u32bit_t*
+    int	i;		/* Index into the state */
+    mt_u32bit_t*
 			state_ptr;	/* Next place to get from state */
-    register mt_u32bit_t
+    mt_u32bit_t
 			value1;		/* Scratch val picked up from state */
-    register mt_u32bit_t
+    mt_u32bit_t
 			value2;		/* Scratch val picked up from state */
 
     /*

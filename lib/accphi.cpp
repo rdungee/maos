@@ -350,7 +350,7 @@ void prop(thread_t *data){
 
 
 #define RUNTIME_CUBIC					\
-    register double dplocx, dplocy, dplocx0, dplocy0;	\
+    double dplocx, dplocy, dplocx0, dplocy0;	\
     int nplocx, nplocy;
 
 #define MAKE_CUBIC_COEFF			\
@@ -367,7 +367,7 @@ void prop(thread_t *data){
 
 #define CUBIC_ADD_GRID						\
     MAKE_CUBIC_COEFF						\
-    register double sum=0, sumwt=0;				\
+    double sum=0, sumwt=0;				\
     for(int ky=-1; ky<3; ky++){					\
 	for(int kx=-1; kx<3; kx++){				\
 	    double wt=fx[kx+1]*fy[ky+1];			\
@@ -384,7 +384,7 @@ void prop(thread_t *data){
 
 #define CUBIC_ADD_NONGRID					\
     MAKE_CUBIC_COEFF						\
-    register double sum=0,sumwt=0;				\
+    double sum=0,sumwt=0;				\
     for(int jy=-1; jy<3; jy++){					\
 	for(int jx=-1; jx<3; jx++){				\
 	    long iphi;						\

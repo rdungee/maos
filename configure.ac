@@ -15,6 +15,9 @@ fi
 if test -z "$LIBS" ;then
     LIBS=" "
 fi
+if echo $CXXFLAGS | grep -v -- -std ;then
+    CXXFLAGS+=" -std=c++11"
+fi
 AC_CONFIG_MACRO_DIR([m4])
 #After enable HEADER, the package name will not appear in CXXFLAGS. Appear in config.h instead.
 AC_CONFIG_HEADER([config.h])
@@ -828,7 +831,13 @@ if test "$with_cuda" != "no" ;then
     cudaver="$($NVCC -V |grep release |cut -d ',' -f 2 |cut -d ' ' -f 3)"
     cudaver="${cudaver/.}"
     echo CUDA toolkit is $cudaver
-    NVCC+=" $CXXFLAGS_CPU"
+    CCBINOPT=$CXXFLAGS
+    #-std=c++11 should be specified only in nvcc, not in Xcompiler.
+    if echo $CCBINOPT | grep c++11 ;then
+	NVCC+=" -std=c++11"
+	CCBINOPT="${CCBINOPT/-std=c++11/}"
+    fi
+    NVCC+=" $CXXFLAGS_NVCC"
     if test -n "$CCBIN" -a "$with_ccbin" != "no" ;then
 	CCBIN="${CCBIN%% *}"
 	NVCC+=" -ccbin ${CCBIN%% *}"
@@ -858,15 +867,18 @@ if test "$with_cuda" != "no" ;then
     if test "$host_cpu" = "x86_64" ;then
         CUDAOPT+=" -DDLONG"
     fi
-    CCBINOPT="$OPTScommon $OPTSprof $OPTSextra -fPIC $CXXFLAGS -Wno-unused-parameter"
+    CCBINOPT+=" $OPTScommon $OPTSprof $OPTSextra -fPIC -Wno-unused-parameter"
     CCBINOPT="${CCBINOPT/-fpermissive/}"
     LIBCUDA+=" -lcurand -lcusparse -lcufft -lcublas -lcudart"
     if $CCBIN -v 2>&1 |grep clang ;then
 	CCN=CLANG
 	LIBCUDA+=" -lc++"
     elif $CCBIN -v 2>&1 |grep icc ;then
-	 CCN=ICC
-	 LIBCUDA+=" -lstdc++"
+	CCN=ICC
+	LIBCUDA+=" -lstdc++"
+    elif $CCBIN -v 2>&1 |grep icpc ;then
+	CCN=ICC
+	LIBCUDA+=" -lstdc++"
     else
 	CCN=GCC
 	CCBINOPT+=" -Wno-unused-value -D__STRICT_ANSI__ $"
