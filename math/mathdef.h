@@ -26,7 +26,7 @@
 #include "fft.h"
 #include "matbin.h"
 #include "spbin.h"
-#include "cell.h"
+//#include "cell.h"
 #include "chol.h"
 #include "zfarr.h"
 #include "mathmisc.h"
@@ -122,7 +122,52 @@ AOS_MATBIN_DEF(AOS_LMAT,long)
 
 #define cellfree(A) ({cellfree_do(A); A=0;})
 
-#define mapwrite(out, A...) write_by_id((void*)out, M_MAP64, A)
+#define dnew new dmat
+#define cnew new cmat
+#define rnew new rmat
+#define znew new zmat
+#define lnew new lmat
+
+#define dcellnew new dcell
+#define ccellnew new ccell
+#define rcellnew new rcell
+#define zcellnew new zcell
+#define lcellnew new lcell
+#define mapcellnew new mapcell
+#define rmapcellnew new rmapcell
+#define loccellnew new loccell
+
+#define dccellnew new dccell
+#define cccellnew new cccell
+#define rccellnew new rccell
+#define zccellnew new zccell
+#define lccellnew new lccell
+
+#define mapccellnew new mapccell
+#define rmapccellnew new rmapccell
+#define locccellnew new locccell
+
+#define dcccellnew new dcccell
+#define ccccellnew new ccccell
+#define rcccellnew new rcccell
+#define zcccellnew new zcccell
+#define lcccellnew new lcccell
+
+#define dspnew new dsp
+#define cspnew new csp
+#define sspnew new ssp
+#define zspnew new zsp
+
+#define dspcellnew new dspcell
+#define cspcellnew new cspcell
+#define sspcellnew new sspcell
+#define zspcellnew new zspcell
+
+#define dspccellnew new dspccell
+#define cspccellnew new cspccell
+#define sspccellnew new sspccell
+#define zspccellnew new zspccell
+/*
 #define mapread(A...)    (map_t*)read_by_id(M_MAP64, 0, A)
 #define mapcellread(A...) (mapcell*)read_by_id(M_MAP64, 1, A)
 #define mapcellnew (mapcell*)cellnew
@@ -136,7 +181,7 @@ AOS_MATBIN_DEF(AOS_LMAT,long)
 #define loccellread(A...) (loccell*)read_by_id(M_LOC64, 1, A)
 #define loccellnew (loccell*)cellnew
 #define locccellnew (locccell*)cellnew
-/** Read needs type checking, so don't use readbin*/
+
 #define dread(A...)    dmat_cast(read_by_id(M_DBL, 0, A))
 #define dcellnew (dcell*)cellnew
 #define dccellnew (dccell*)cellnew
@@ -189,4 +234,5 @@ AOS_MATBIN_DEF(AOS_LMAT,long)
 #define dspccellnew (dspccell*)cellnew
 #define cspcellnew (cspcell*)cellnew
 #define cspccellnew (cspccell*)cellnew
+*/
 #endif

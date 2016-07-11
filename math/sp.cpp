@@ -30,7 +30,9 @@
    Create a nx*ny X(sp) matrix with memory for nmax max
    elements allocated.
 */
-X(sp)* X(spnew)(long nx, long ny, long nzmax){
+//X(sp)* X(spnew)(long nx, long ny, long nzmax){
+//    return new X(sp)(nx, ny, nzmax);
+    /*
     X(sp) *sp;
     if(nx<0) nx=0;
     if(ny<0) ny=0;
@@ -47,8 +49,9 @@ X(sp)* X(spnew)(long nx, long ny, long nzmax){
     sp->nz=-1;
     sp->nref=mycalloc(1,int);
     sp->nref[0]=1;
-    return sp;
+    return sp;*/
 }
+/*
 static void X(spfree_content)(X(sp) *sp){
     if(!sp) return;
     assert(issp(sp));
@@ -61,15 +64,17 @@ static void X(spfree_content)(X(sp) *sp){
 	    free(sp->nref);
 	}
     }
-}
+    }*/
 /**
  * free a X(sp) matrix*/
 void X(spfree_do)(X(sp) *sp){
-    if(sp){
-	assert(issp(sp));
-	X(spfree_content)(sp);
+    if(!sp) return;
+    assert(issp(sp));
+    delete sp;
+    /*
+      X(spfree_content)(sp);
 	free(sp);
-    }
+    */
 }
 
 /**
@@ -78,13 +83,15 @@ void X(spfree_do)(X(sp) *sp){
 X(sp) *X(spref)(X(sp) *A){
     if(!A) return NULL;
     assert_sp(A);
+    X(sp) *out=new X(sp)(*A);
+    /*
     X(sp) *out = mycalloc(1,X(sp));
     if(!A->nref){
 	A->nref=mycalloc(1,int);
 	A->nref[0]=1;
     }
     memcpy(out,A,sizeof(X(sp)));
-    atomicadd(out->nref,1);
+    atomicadd(out->nref,1);*/
     return out;
 }
 /**
@@ -94,9 +101,11 @@ void X(spmove)(X(sp) *A, X(sp) *res){
     if(!res || !A) 
 	error("Trying to move an NULL matrix\n");
     assert(issp(res) && issp(A));
+    /*
     X(spfree_content)(A);
     memcpy(A,res,sizeof(X(sp)));
-    memset(res, 0, sizeof(X(sp)));
+    memset(res, 0, sizeof(X(sp)));*/
+    A=res;
 }
 
 /**
@@ -170,12 +179,7 @@ X(sp)* X(sp_cast)(const void *A){
    resize a X(sp) matrix
 */
 void X(spsetnzmax)(X(sp) *sp, long nzmax){
-    assert(issp(sp));
-    if(sp->nzmax!=nzmax){
-	sp->i=myrealloc(sp->i,nzmax,spint);
-	sp->x=myrealloc(sp->x,nzmax,T);
-	sp->nzmax=nzmax;
-    }
+    sp->Resize(nzmax);
 }
 
 /**
@@ -235,7 +239,7 @@ int X(spcheck)(const X(sp) *sp){
 	    }
 	}
 	if(sp->p[sp->ny]!=sp->nzmax){
-	    warning("real nzmax is %ld, allocated is %ld\n",(long)sp->p[sp->ny],sp->nzmax);
+	    warning("real nzmax is %ld, allocated is %ld\n",(long)sp->p[sp->ny],sp->nzmax());
 	}
     }
     return (not_lower?0:1) | (not_upper?0:2);
@@ -245,9 +249,9 @@ int X(spcheck)(const X(sp) *sp){
 void X(spscale)(X(sp) *A, const T beta){
     if(A){
 	assert_sp(A);
-	if(A->nref[0]>1){
+	/*if(A->nref[0]>1){
 	    error("spscale on referenced dsp\n");
-	}
+	    }*/
 	for(long i=0; i<A->p[A->ny]; i++){
 	    A->x[i]*=beta;
 	}
@@ -480,7 +484,8 @@ void X(spadd)(X(sp) **A0, T alpha, const X(sp) *B, T beta){
 	}else{
 	    X(sp)*res=X(spadd2)(*A0, alpha, B, beta);
 	    X(spmove)(*A0, res);
-	    free(res);
+	    //free(res);
+	    delete res;
 	}
     }
 }
@@ -505,8 +510,7 @@ void X(spaddI)(X(sp) *A, T alpha){
     }
     long nzmax=A->p[A->ny];
     if(missing){//expanding storage
-	A->x=myrealloc(A->x,(nzmax+missing),T);
-	A->i=myrealloc(A->i,(nzmax+missing),spint);
+	A->Resize(nzmax+missing);
     }
     missing=0;
     for(long icol=0; icol<A->ny; icol++){
@@ -531,7 +535,7 @@ void X(spaddI)(X(sp) *A, T alpha){
 	}
     }
     A->p[A->ny]+=missing;
-    A->nzmax=A->p[A->ny];
+    A->Resize(A->p[A->ny]);
 }
 /**
  * Transpose a sparse array*/

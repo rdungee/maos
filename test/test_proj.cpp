@@ -48,7 +48,7 @@ static void test_grid_proj(){
     /*drawopdamp("test_proj",loc2,phi2,amp,"phi"); */
     
     writedbl(phi2,loc2->nloc,1,"phi");
-    /*locwrite(loc2,"loc"); */
+    /*writebin(loc2,"loc"); */
 }
 int main(){
     test_grid_proj();

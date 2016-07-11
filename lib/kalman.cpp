@@ -704,18 +704,21 @@ dmat *kalman_test(kalman_t *kalman, dmat *input){
     dcell *acc=dcellnew3(nwfs, 1, ngs, 0);
     dcell *meas=dcellnew3(nwfs, 1, ngs, 0);
     int nmod=input->nx;
-    dmat* pinput=input;
+    //dmat* pinput=input;
     dmat *mres=ddup(input);
-    dmat*  pmres=mres;
+    //dmat*  pmres=mres;
     kalman_init(kalman);
     rand_t rstat;
     seed_rand(&rstat, 1);
-    dmat *outi=dnew_ref(nmod, 1, (double*)1);//wraper
+    //dmat *outi=dnew_ref(nmod, 1, (double*)1);//wraper
     dcell *inic=dcellnew(1,1); inic->p[0]=dnew_ref(nmod,1,(double*)1);//wrapper
-    dmat *ini=inic->p[0];
+    //dmat *ini=inic->p[0];
     for(int istep=0; istep<input->ny; istep++){
-	ini->p=(double*)(pinput+istep);
-	outi->p=(double*)(pmres+istep);
+	//ini->p=(double*)(pinput+istep);
+	//outi->p=(double*)(pmres+istep);
+	dmat *outi=dnew_ref(nmod, 1, PCOL(mres, istep));
+	//ini=dnew_ref(nmod, 1, PCOL(input, istep));
+
 	kalman_output(kalman, &outi, 1, -1);
 	int indk=0;
 	for(int iwfs=0; iwfs<nwfs; iwfs++){
@@ -739,12 +742,13 @@ dmat *kalman_test(kalman_t *kalman, dmat *input){
 	    kalman_update(kalman, meas->m, indk-1);
 	}
 	dcellmm(&acc, Gwfs, inic, "nn", 1);/*OL measurement*/
+	dfree(outi);
     }
     dcellfree(rmsn);
     dcellfree(meas);
     dcellfree(acc);
     dcellfree(noise);
-    dfree(outi);
+    //dfree(outi);
     dcellfree(inic);
     return mres;
 }

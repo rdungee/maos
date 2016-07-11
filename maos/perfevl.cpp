@@ -250,8 +250,10 @@ void perfevl_ievl(thread_t *info){
 		    double displacex=parms->evl.thetax->p[ievl]*hl;
 		    double displacey=parms->evl.thetay->p[ievl]*hl;
 		    if(parms->tomo.square){
-			memcpy(&xmap, recon->xmap->p[ipsr], sizeof(map_t));
-			xmap.p=simu->opdr->p[ipsr]->p;
+			xmap=*recon->xmap->p[ipsr];
+			xmap.Ref(*simu->opdr->p[ipsr]);
+			//memcpy(&xmap, recon->xmap->p[ipsr], sizeof(map_t));
+			//xmap.p=simu->opdr->p[ipsr]->p;
 			prop_grid(&xmap, aper->locs, iopdevl->p, -1,
 				  displacex, displacey, scale, 0, 0, 0);
 		    }else{

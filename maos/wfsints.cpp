@@ -49,7 +49,7 @@ void wfsints(thread_t *thread_data){
     const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
     const int hasllt=(parms->powfs[ipowfs].llt!=NULL);
     const int illt=hasllt?parms->powfs[ipowfs].llt->i->p[wfsind]:0;
-    const double *srot=(hasllt && parms->powfs[ipowfs].radrot)?powfs[ipowfs].srot->p[illt]->p:NULL;
+    const double *srot=(hasllt && parms->powfs[ipowfs].radrot)?powfs[ipowfs].srot->p[illt]->p():NULL;
     const int nsa=powfs[ipowfs].saloc->nloc;
     const int ncompx=powfs[ipowfs].ncompx;/*necessary size to build detector image. */
     const int ncompy=powfs[ipowfs].ncompy;

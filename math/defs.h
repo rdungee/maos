@@ -147,8 +147,17 @@ INLINE int issp(const void *id){
 #endif //if USE_LONG
 
 #define ABS2(A) creal((A)*conj(A))
-INLINE int ismat(const void *id){
-    const uint32_t magic=*((const uint32_t*)id);
+INLINE int ismat(const TwoDim *A){
+    return A && A->id==M_T;
+    //TwoDim *dim=dynamic_cast<TwoDim*>(id);
+    //return (dim && dim->id==M_T);
+}
+INLINE int ismat(const cell *A){
+    //const uint32_t magic=*((const uint32_t*)A);
+    return (A && A->id==M_T);
+}
+INLINE int ismat(const void *A){
+    const uint32_t magic=*((const uint32_t*)A);
     return (magic==M_T);
 }
 

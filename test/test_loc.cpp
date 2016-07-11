@@ -13,7 +13,7 @@ static void test_w1(){
     writedbl(amp,loc->nloc,1,"amp");
     writebin(W1,"W1");
     writebin(W0,"W0");
-    locwrite(loc,"loc");
+    writebin(loc,"loc");
 }
 static void test_wploc(){
     loc_t *loc=locread("ploc.bin");
@@ -40,7 +40,7 @@ static void test_wcir(){
     dsp *W0=NULL;
     dmat *W1=NULL;
     mkw_circular(loc,0,0,10,&W0,&W1);
-    locwrite(loc,"loc");
+    writebin(loc,"loc");
     writebin(W0,"W0");
     writebin(W1,"W1");
 }
@@ -90,9 +90,9 @@ static void test_sqlocrot(void){
     int nn=64;
     double dx=1./64.;
     loc_t *loc=mksqlocrot(nn,nn,dx,-nn/2*dx,-nn/2*dx,0);
-    locwrite(loc,"loc_0deg.bin");
+    writebin(loc,"loc_0deg.bin");
     loc_t *loc2=mksqlocrot(nn,nn,dx,-nn/2*dx,-nn/2*dx,M_PI/10);
-    locwrite(loc2,"loc_18deg.bin");
+    writebin(loc2,"loc_18deg.bin");
     }*/
 /*
 void test_loc_reduce_sp(void){
@@ -126,14 +126,14 @@ static void test_loc_reduce_spcell(void){
 static void test_zernike(){
     loc_t *loc=locread("loc_circle.bin");
     dmat *mod=zernike(loc,1,0, 10, 0);
-    locwrite(loc,"loc");
+    writebin(loc,"loc");
     writebin(mod,"mod");
     dgramschmidt(mod,NULL);
     writebin(mod,"mod_norm");
     }
 static void test_embed(){
     loc_t *loc=mkannloc(10, 0, 1./64,0);
-    locwrite(loc, "loccir");
+    writebin(loc, "loccir");
     dmat *opd=dnew(645,645);
     dembed_locstat(&opd, loc, NULL);
     writebin(opd, "locopd");

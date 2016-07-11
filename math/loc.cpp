@@ -1011,8 +1011,7 @@ void loc_reduce_spcell(loc_t *loc, dspcell *spc, int dim, int cont){
 		}
 	    }
 	    sp->p[count]=sp->p[nloc];
-	    sp->ny=count;
-	    sp->p=myrealloc(sp->p,(count+1),spint);
+	    sp->Resize(sp->nx, count, sp->nzmax);
 	}
     }
     free(skip);
@@ -1049,8 +1048,9 @@ void loc_reduce_sp(loc_t *loc, dsp *sp, int dim, int cont){
 	    }
 	}
 	sp->p[count]=sp->p[nloc];
-	sp->ny=count;
-	sp->p=myrealloc(sp->p,(count+1),spint);
+	sp->Resize(sp->nx, count, sp->nzmax);
+	//sp->ny=count;
+	//sp->p=myrealloc(sp->p,(count+1),spint);
     }
     free(skip);
 }
@@ -1344,45 +1344,19 @@ void locresize(loc_t *loc, long nloc){
    create a new map_t object.
 */
 map_t *mapnew(long nx, long ny, double dx, double dy, double *p){
-    map_t *map=(map_t*)realloc(dnew_data(nx, ny, p),sizeof(map_t));
-    map->h=0;
-    map->dx=dx;
-    map->dy=dy;
-    map->ox=-map->nx/2*map->dx;
-    map->oy=-map->ny/2*map->dy;
-    map->vx=0;
-    map->vy=0;
-    map->iac=0;
-    return map;
+    return new map_t(nx, ny, p, dx, dy);
 }
 /**
    ceate a new map_t object from existing one. P is left empty.
 */
 map_t *mapnew2(map_t* A){
-    map_t *map=(map_t*)realloc(dnew_data(A->nx, A->ny, NULL),sizeof(map_t));
-    map->h=A->h;
-    map->dx=A->dx;
-    map->dy=A->dy;
-    map->ox=A->ox;
-    map->oy=A->oy;
-    map->vx=A->vx;
-    map->vy=A->vy;
-    map->iac=A->iac;
-    return map;
+    map_t *out=new map_t(*A);
+    out->New();
+    return out;
 }
 map_t *mapref(map_t*in){
     if(!in) return NULL;
-    map_t *out=mycalloc(1,map_t);
-    memcpy(out,in,sizeof(map_t));
-    if(!in->nref){
-	extern quitfun_t quitfun;
-	if(quitfun==&default_quitfun){
-	    warning_once("Referencing non-referenced data. This may cause error.\n");
-	}
-    }else{
-	atomicadd(in->nref, 1);
-    }
-    return out;
+    return new map_t(*in);
 }
 /**
    Create a circular aperture on map_t.

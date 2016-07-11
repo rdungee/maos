@@ -56,12 +56,12 @@ static cholmod_sparse *dsp2chol(const dsp *A){
    Convert cholmod_sparse to dsp. Data is shared
 */
 static dsp *chol2sp(const cholmod_sparse *B){
-    dsp *A;
-    A=dspnew(B->nrow, B->ncol, 0);
+    dsp *A=new dsp(B->nrow, B->ncol, B->nzmax, (Int*)B->p, (Int*)B->i, (double*)B->x);
+/*    A=dspnew(B->nrow, B->ncol, 0);
     A->p=(spint*)B->p;
     A->i=(spint*)B->i;
     A->x=(double*)B->x;
-    A->nzmax=B->nzmax;
+    A->nzmax=B->nzmax;*/
     return A;
 }
 /**
@@ -135,11 +135,15 @@ spchol* chol_factorize(dsp *A_in){
 	warning2("Converted to our format.");
 	cholmod_factor *L=out->L;
 	out->Cp=L->Perm; L->Perm=NULL;
-	dsp *C=out->Cl=dspnew(L->n, L->n, 0);
-	C->p=L->p;L->p=NULL;
-	C->i=L->i;L->i=NULL;
-	C->x=L->x;L->x=NULL;
-	C->nzmax=L->nzmax;
+	dsp *C=out->Cl=new dsp(L->n, L->n, L->nzmax, L->p, L->i, L->x);
+	/*dsp *C=out->Cl=dspnew(L->n, L->n, 0);
+	C->p=L->p;
+	C->i=L->i;
+	C->x=L->x;
+	C->nzmax=L->nzmax;*/
+	L->p=NULL;
+	L->i=NULL;
+	L->x=NULL;
 	MOD(free_factor)(&out->L, out->c);
 	MOD(finish)(out->c);
 	free(out->c);
@@ -147,7 +151,7 @@ spchol* chol_factorize(dsp *A_in){
 	out->L=NULL;
     }
 #endif
-    free(A);/*just free our reference.*/
+    free(A);/*just free our pointer.*/
     return out;
 }
 
@@ -400,11 +404,12 @@ dsp *chol_spsolve(spchol *A, const dsp *y){
     cholmod_sparse *x2=MOD(spsolve)(CHOLMOD_A,A->L,y2,A->c);
     if(!x2) error("chol_solve failed\n");
     if(x2->z) error("why is this?\n");
-    dsp *x=dspnew(x2->nrow, x2->ncol, 0);
+    dsp *x=chol2sp(x2);
+    /*dsp *x=dspnew(x2->nrow, x2->ncol, 0);
     x->p=(spint*)x2->p;
     x->i=(spint*)x2->i;
     x->x=(double*)x2->x;
-    x->nzmax=x2->nzmax;
+    x->nzmax=x2->nzmax;*/
     free(y2);/*don't do spfree */
     free(x2);/*don't do spfree */
     return x;

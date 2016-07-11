@@ -375,7 +375,7 @@ static void test_cxx(){
 	cfree(atm);
     }
     loc_t *loc=mksqloc_auto(16,16,1./4,1./4);
-    locwrite(loc,"loc");
+    writebin(loc,"loc");
     dmat *B=stfun_kolmogorov(loc, r0);
     writebin(B, "B_theory");
 }

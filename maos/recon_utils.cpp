@@ -246,8 +246,10 @@ static void Tomo_prop_do(thread_t *info){
 		    displace[1]+=simu->atm->p[ips0]->vy*simu->dt*2;
 		}
 		double scale=1. - ht/hs;
-		memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
-		xmap.p=data->xin->p[ips]->p;
+		xmap=*recon->xmap->p[ips];
+		xmap.Ref(*data->xin->p[ips]);
+		//memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
+		//xmap.p=data->xin->p[ips]->p;
 		prop_grid_stat(&xmap, recon->ploc->stat, xx->p, 1, 
 			       displace[0],displace[1], scale, 0, 0, 0);
 	    }else{
@@ -327,8 +329,10 @@ static void Tomo_iprop_do(thread_t *info){
 	    if(!data->xout->p[ips]){
 		data->xout->p[ips]=dnew(recon->xloc->p[ips]->nloc, 1);
 	    }
-	    memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
-	    xmap.p=data->xout->p[ips]->p;
+	    xmap=*recon->xmap->p[ips];
+	    xmap.Ref(*data->xout->p[ips]);
+	    //memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
+	    //xmap.p=data->xout->p[ips]->p;
 	    double ht=recon->ht->p[ips];
 	    for(int iwfs=0; iwfs<parms->nwfsr; iwfs++){
 		if(!data->gg->p[iwfs]) continue;
@@ -628,8 +632,10 @@ void psfr_calc(SIM_T *simu, dcell *opdr, dcell *dmpsol, dcell *dmerr, dcell *dme
 			double dispx=parms->evl.thetax->p[ievl]*ht;
 			double dispy=parms->evl.thetay->p[ievl]*ht;
 			if(parms->tomo.square){/*square xloc */
-			    memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
-			    xmap.p=opdr->p[ips]->p;
+			    xmap=*recon->xmap->p[ips];
+			    xmap.Ref(*opdr->p[ips]);
+			    //memcpy(&xmap, recon->xmap->p[ips], sizeof(map_t));
+			    //xmap.p=opdr->p[ips]->p;
 			    prop_grid_stat(&xmap, locs->stat, xx->p, 1, 
 					   dispx, dispy, scale, 0, 0, 0);
 			}else{

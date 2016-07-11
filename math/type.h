@@ -19,6 +19,7 @@
 #ifndef AOS_MATARRH_TYPE_H
 #define AOS_MATARRH_TYPE_H
 #include "numtype.h"
+#include "array.h"
 /**
    \file type.h Defines the math data types like dmat, cmat, dcell, ccell,
    dsp, csp data types.
@@ -58,39 +59,36 @@ typedef enum CEMBED{
 	T m;/*store continuous data*/ \
     }
 
-#define SPMATARR(T) struct{						\
-	uint32_t id;/**<to identify the array type*/			\
-	T *restrict x;       /**< numerical values, size nzmax */	\
-	long nx;             /**< number of rows */		\
-	long ny;             /**< number of columns */		\
-	char *header;        /**<header*/				\
-	long nzmax ;         /**< maximum number of entries */		\
-        spint *restrict p ;  /**< column pointers (size n+1) or col indices (size nzmax) when nz!=-1 */ \
-	spint *restrict i ;  /**< row indices, size nzmax */		\
-	long nz ;            /**< number of entries in triplet matrix, -1 for compressed-col */ \
-	int *nref;           /**< reference counting like dmat */	\
-    }
-
-typedef MATARR(double) dmat;/*a double matrix object contains 2-d array of double numbers*/
+typedef Mat<double> dmat;
+typedef Mat<float> smat;
+typedef Mat<dcomplex> cmat;
+typedef Mat<fcomplex> zmat;
+typedef Mat<long> lmat;
+/*typedef MATARR(double) dmat;//a double matrix object contains 2-d array of double numbers
 typedef MATARR(float) smat;
 typedef MATARR(dcomplex) cmat;
 typedef MATARR(fcomplex) zmat;
 typedef MATARR(long) lmat;
-
+*/
+/*
 typedef SPMATARR(double) dsp;
 typedef SPMATARR(float) ssp;
 typedef SPMATARR(dcomplex) csp;
 typedef SPMATARR(fcomplex) zsp;
-
+*/
+typedef Sparse<double> dsp;
+typedef Sparse<float>  ssp;
+typedef Sparse<dcomplex> csp;
+typedef Sparse<fcomplex> zsp;
 
 
 /**
    OPD or Amplitude map defined on square/rectangular grids. with equal spacing
    on x/y. Can be casted to dmat
 */
-typedef struct map_t{
+typedef struct map_t:public dmat{
     /*The OPD, takes the same form of dmat so can be casted. */
-    ARR(double);
+    //ARR(double);
     double ox;      /**<Origin in x*/
     double oy;      /**<Origin in y*/
     double dx;      /**<Sampling along x*/
@@ -99,13 +97,18 @@ typedef struct map_t{
     double vx;      /**Wind velocity. Useful for atmospheric grid*/
     double vy;      /**Wind velocity. Useful for atmospheric grid*/
     double iac;     /**<Inter-actuator coupling. >0: use cubic influence function*/
+public:
+    map_t(){}
+    map_t(Int nxi, Int nyi, Real *pi, Real dxi, Real dyi)
+	:dmat(nxi, nyi, pi, 0),ox(-nxi/2*dxi),oy(-nyi/2*dyi),dx(dxi),dy(dyi),vx(0),vy(0),iac(0){}
+    map_t(const map_t&in):dmat(in),ox(in.ox),oy(in.oy),dx(in.dx),dy(in.dy),h(in.h),vx(in.vx),vy(in.vy),iac(in.iac){}
 } map_t;
 
 /**
    Map with different x/y sampling. Can be cased to dmat
 */
-typedef struct rmap_t{
-    ARR(double);
+typedef struct rmap_t:public dmat{
+    //ARR(double);
     double ox;      /**<Origin in x*/
     double oy;      /**<Origin in y*/
     double dx;      /**<Sampling along x (first dimension)*/
@@ -182,17 +185,50 @@ typedef struct pts_t{
     double dy;     /**<sampling of points in each subaperture. dy=dx normally required.*/
 }pts_t;
 
+typedef Cell<cmat> ccell;
+typedef Cell<zmat> zcell;
+typedef Cell<dmat> dcell;
+typedef Cell<smat> scell;
+typedef Cell<lmat> lcell;
+
+typedef Cell<ccell> cccell;
+typedef Cell<zcell> zccell;
+typedef Cell<dcell> dccell;
+typedef Cell<scell> sccell;
+typedef Cell<lcell> lccell;
+
+typedef Cell<cccell> ccccell;
+typedef Cell<zccell> zcccell;
+typedef Cell<dccell> dcccell;
+typedef Cell<sccell> scccell;
+typedef Cell<lccell> lcccell;
+
+typedef Cell<map_t> mapcell;
+typedef Cell<rmap_t> rmapcell;
+typedef Cell<loc_t> loccell;
+typedef Cell<mapcell> mapccell;
+typedef Cell<rmapcell> rmapccell;
+typedef Cell<loccell> locccell;
+
+/*
 typedef CELLARR(cmat*) ccell;
 typedef CELLARR(zmat*) zcell;
 typedef CELLARR(dmat*) dcell;
 typedef CELLARR(smat*) scell;
 typedef CELLARR(lmat*) lcell;
+*/
+typedef Cell<csp> cspcell;
+typedef Cell<zsp> zspcell;
+typedef Cell<dsp> dspcell;
+typedef Cell<ssp> sspcell;
 
+/*
 typedef CELLARR(dsp*) dspcell;
 typedef CELLARR(ssp*) sspcell;
 typedef CELLARR(csp*) cspcell;
 typedef CELLARR(zsp*) zspcell;
-
+*/
+/*
 typedef CELLARR(ccell*) cccell;
 typedef CELLARR(zcell*) zccell;
 typedef CELLARR(dcell*) dccell;
@@ -207,16 +243,18 @@ typedef CELLARR(iccell*) icccell;
 
 typedef CELLARR(map_t*) mapcell;
 typedef CELLARR(rmap_t*) rmapcell;
+
 typedef CELLARR(loc_t*) loccell;
 
 typedef CELLARR(mapcell*) mapccell;
 typedef CELLARR(rmapcell*) rmapccell;
 typedef CELLARR(loccell*) locccell;
 
+
 typedef struct cell{
     ARR(struct cell*);
     struct cell *m;
-}cell;
+    }cell;*/
 #undef ARR
 #undef CELLARR
 #undef MATARR
@@ -235,19 +273,21 @@ INLINE void assert_2d(long ix, long iy, long nx, long ny){
 }
 #define IND1(A,i) ((A)->p[assert_1d((i), (A)->nx, (A)->ny),(i)])
 #define IND2(A,ix,iy) ((A)->p[assert_2d((ix), (iy), (A)->nx, (A)->ny),(ix)+(A)->nx*(iy)])
-#define PIND1(A,i) ((A)->p+(assert_1d(i, (A)->nx, (A)->ny),(i)))
-#define PIND2(A,ix,iy) ((A)->p+(assert_2d((ix), (iy), (A)->nx, (A)->ny),(ix)+(A)->nx*(iy)))
+//#define PIND1(A,i) ((A)->p+(assert_1d(i, (A)->nx, (A)->ny),(i)))
+//#define PIND2(A,ix,iy) ((A)->p+(assert_2d((ix), (iy), (A)->nx, (A)->ny),(ix)+(A)->nx*(iy)))
 #else
 #define IND1(A,i) ((A)->p[(i)])
 #define IND2(A,ix,iy) ((A)->p[(ix)+(A)->nx*(iy)])
-#define PIND1(A,i) ((A)->p+(i))
-#define PIND2(A,ix,iy) ((A)->p+(ix)+(A)->nx*(iy))
+//#define PIND1(A,i) ((A)->p+(i))
+//#define PIND2(A,ix,iy) ((A)->p+(ix)+(A)->nx*(iy))
 #endif
+#define PIND1(A,i) &IND1(A,i)
+#define PIND2(A,ix,iy) &IND2(A,ix,iy)
 #define IND0(A) error("Invalid use. Use IND(A,i) or IND(A,ix,iy)\n");
 #define PIND0(A) error("Invalid use. Use PIND(A,i) or PIND(A,ix,iy)\n");
 #define IND_GET(_0,_1,_2,_3,NAME,...) NAME
 #define IND(...) IND_GET(_0,__VA_ARGS__,IND2,IND1,IND0,IND0)(__VA_ARGS__)
 #define PIND(...) IND_GET(_0,__VA_ARGS__,PIND2,PIND1,PIND0,PIND0)(__VA_ARGS__)
-#define PCOL(A,iy) ((A)->p+(iy)*(A)->nx)
+#define PCOL(A,iy) &((A)->p[(iy)*(A)->nx])
 
 #endif

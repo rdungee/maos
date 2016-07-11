@@ -56,7 +56,7 @@ setup_recon_ploc(RECON_T *recon, const PARMS_T *parms){
 	mapfree(pmap);
     }
     if(parms->save.setup){
-	locwrite(recon->ploc, "ploc");
+	writebin(recon->ploc, "ploc");
     }
     loc_create_map_npad(recon->ploc, parms->tomo.square?0:1,0,0);
     recon->pmap=recon->ploc->map;
@@ -147,7 +147,7 @@ setup_recon_floc(RECON_T *recon, const PARMS_T *parms){
 	writebin(recon->W1, "W1");
     }
     if(parms->save.setup){
-	locwrite(recon->floc, "floc");
+	writebin(recon->floc, "floc");
     }
     loc_create_stat(recon->floc);
 }
@@ -225,8 +225,9 @@ setup_recon_xloc(RECON_T *recon, const PARMS_T *parms){
 	    double dxr=parms->atmr.dx/parms->fit.pos;
 	    const double guard=parms->tomo.guard*dxr;
 	    create_metapupil(&recon->xcmap->p[ips], 0, 0, parms->dirs, parms->aper.d,ht,dxr,dxr,0,guard,0,0,0,parms->fit.square);
-	    free(recon->xcmap->p[ips]->p);recon->xcmap->p[ips]->p=NULL;
-	    free(recon->xcmap->p[ips]->nref);recon->xcmap->p[ips]->nref=NULL;
+	    recon->xcmap->p[ips]->DeinitMem();
+	    //free(recon->xcmap->p[ips]->p);recon->xcmap->p[ips]->p=NULL;
+	    //free(recon->xcmap->p[ips]->nref);recon->xcmap->p[ips]->nref=NULL;
 	}
     }
     recon->xmap=mapcellnew(npsr, 1);

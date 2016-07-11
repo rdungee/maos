@@ -60,9 +60,9 @@ APER_T * setup_aper(const PARMS_T *const parms){
 	    warning("Pupil is rotated by %g deg\n",parms->aper.rotdeg);
 	    const long nx=aper->ampground->nx;
 	    const long ny=aper->ampground->ny;
-	    dmat *B=dnew_data(nx, ny, aper->ampground->p);
-	    aper->ampground->p=mycalloc(nx*ny,double);
-	    dembed((dmat*)aper->ampground,B,parms->aper.rotdeg/180.*M_PI);
+	    dmat *B=dnew(nx, ny);
+	    dembed(B,(dmat*)aper->ampground,parms->aper.rotdeg/180.*M_PI);
+	    Copy(*aper->ampground, *B);
 	    dfree(B);
 	}
     }
@@ -91,10 +91,9 @@ APER_T * setup_aper(const PARMS_T *const parms){
 	map_t *mask=mapread("%s",parms->aper.pupmask);
 	if(fabs(parms->aper.rotdeg)>1.e-12){
 	    warning("Pupil mask is rotated by %g deg\n",parms->aper.rotdeg);
-	    dmat *B=dnew_data(mask->nx, mask->ny, mask->p);
-	    mask->p=mycalloc(mask->nx*mask->ny,double);
-	    dembed((dmat*)mask, B, parms->aper.rotdeg/180.*M_PI);
-	    dfree(B);
+	    dmat B(mask->nx, mask->ny);
+	    dembed(&B, (dmat*)mask, parms->aper.rotdeg/180.*M_PI);
+	    Copy(*mask, B);
 	}
 	dmat *ampmask=dnew(aper->locs->nloc, 1);
 	prop_grid_stat(mask, aper->locs->stat, ampmask->p, 1, 0, 0, 1, 0, 0, 0);
@@ -151,7 +150,7 @@ APER_T * setup_aper(const PARMS_T *const parms){
 	}
     }
     if(parms->save.setup){
-	locwrite(aper->locs, "aper_locs");
+	writebin(aper->locs, "aper_locs");
 	writebin(aper->amp, "aper_amp");
 	writebin(aper->mcc, "aper_mcc");
     }

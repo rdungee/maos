@@ -193,9 +193,9 @@ static void test_accuracy(int argc, char **argv){
     if(!save) return;
     mapwrite(screen2,"accphi_screen2");
     mapwrite(screen,"accphi_screen");
-    locwrite((loc_t*)pts,"accphi_pts");
-    locwrite(loc,"accphi_loc");
-    locwrite(locin, "accphi_locin");
+    writebin((loc_t*)pts,"accphi_pts");
+    writebin(loc,"accphi_loc");
+    writebin(locin, "accphi_locin");
     loc_create_map_npad(locin, 0, 0, 0);
     mapwrite(locin->map, "accphi_locin_map");
     mapwrite(loc->map, "accphi_loc_map");

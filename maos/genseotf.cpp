@@ -95,7 +95,7 @@ static void genseotf_do(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 	    double thres=opdbias?1:(1-1e-10);
 	    info2("There is %s bias\n", opdbias?"NCPA":"no");
 	    OMPTASK_SINGLE
-		genotf(powfs[ipowfs].intstat->otf->p[iotf]->p+iwvl*nsa,
+		genotf(powfs[ipowfs].intstat->otf->p[iotf]->p()+iwvl*nsa,
 		       loc, powfs[ipowfs].realamp->p[iotf], opdbias, 
 		       powfs[ipowfs].realsaa->p[iotf],
 		       thres,wvl,dtheta,NULL,parms->powfs[ipowfs].r0, parms->powfs[ipowfs].L0, 
@@ -309,7 +309,7 @@ void gensepsf(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
     for(int isepsf=0; isepsf<powfs[ipowfs].intstat->nsepsf; isepsf++){
 	int iotf=notf>1?isepsf:0;
 	int ilotf=nlotf>1?isepsf:0;
-	cmat **lotf=nlotf>0?(powfs[ipowfs].intstat->lotf->p+ilotf*nwvl):NULL;
+	cmat **lotf=nlotf>0?(powfs[ipowfs].intstat->lotf->p()+ilotf*nwvl):NULL;
 	ccell* otf=powfs[ipowfs].intstat->otf->p[iotf]/*PCELL*/;
 	powfs[ipowfs].intstat->sepsf->p[isepsf]=dcellnew(nsa,nwvl);
 	dcell*  psepsf=powfs[ipowfs].intstat->sepsf->p[isepsf]/*PDELL*/;
@@ -499,9 +499,9 @@ void gensei(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 	    double wvlsig=parms->wfs[iwfs].wvlwts->p[iwvl]
 		*parms->wfs[iwfs].siglev*parms->powfs[ipowfs].dtrat;
 	    dcell*  psepsf=intstat->sepsf->p[isepsf]/*PDELL*/;
-	    cmat **nominals=powfs[ipowfs].dtf[iwvl].fused?0:(powfs[ipowfs].dtf[iwvl].nominal->p+powfs[ipowfs].dtf[iwvl].nominal->nx*idtf);
-	    dsp **sis=powfs[ipowfs].dtf[iwvl].si->p+powfs[ipowfs].dtf[iwvl].si->nx*idtf;
-	    double *angles=nllt?(powfs[ipowfs].srot->p[irot]->p):0;
+	    cmat **nominals=powfs[ipowfs].dtf[iwvl].fused?0:(powfs[ipowfs].dtf[iwvl].nominal->p()+powfs[ipowfs].dtf[iwvl].nominal->nx*idtf);
+	    dsp **sis=powfs[ipowfs].dtf[iwvl].si->p()+powfs[ipowfs].dtf[iwvl].si->nx*idtf;
+	    double *angles=nllt?powfs[ipowfs].srot->p[irot]->p():0;
 	    ccell *se_save=ccellnew(3, NTHREAD);
 #ifdef _OPENMP
 	    if(omp_in_parallel()){

@@ -102,7 +102,7 @@ void wfsgrad_iwfs(thread_t *info){
     const int do_phy=(parms->powfs[ipowfs].usephy && isim>=parms->powfs[ipowfs].phystep);
     const int do_pistatout=parms->powfs[ipowfs].pistatout&&isim>=parms->powfs[ipowfs].pistatstart;
     const int do_geom=(!do_phy || save_gradgeom || do_pistatout) && parms->powfs[ipowfs].type==0;
-    const double *realamp=powfs[ipowfs].realamp?powfs[ipowfs].realamp->p[wfsind]->p:0;
+    const double *realamp=powfs[ipowfs].realamp?powfs[ipowfs].realamp->p[wfsind]->p():0;
     dmat *gradcalc=NULL;
     dmat **gradacc=&simu->gradacc->p[iwfs];
     dmat **gradout=&simu->gradcl->p[iwfs];
@@ -334,17 +334,15 @@ void wfsgrad_iwfs(thread_t *info){
 		dmat **bkgrnd2=NULL;
 		dmat **bkgrnd2c=NULL;
 		if(powfs[ipowfs].bkgrnd){
-		    if(powfs[ipowfs].bkgrnd->ny==1){
-			bkgrnd2=powfs[ipowfs].bkgrnd->p;
-		    }else{
-			bkgrnd2=powfs[ipowfs].bkgrnd->p+nsa*wfsind;
+		    bkgrnd2=powfs[ipowfs].bkgrnd->p;
+		    if(powfs[ipowfs].bkgrnd->ny>1){
+			bkgrnd2+=nsa*wfsind;
 		    }
 		}
 		if(powfs[ipowfs].bkgrndc){
-		    if(powfs[ipowfs].bkgrndc->ny==1){
-			bkgrnd2c=powfs[ipowfs].bkgrndc->p;
-		    }else{
-			bkgrnd2c=powfs[ipowfs].bkgrndc->p+nsa*wfsind;
+		    bkgrnd2c=powfs[ipowfs].bkgrndc->p;
+		    if(powfs[ipowfs].bkgrndc->ny>1){
+			bkgrnd2c+=nsa*wfsind;
 		    }
 		}
 		for(int isa=0; isa<ints->nx; isa++){
@@ -861,9 +859,9 @@ static void wfsgrad_dither_post(SIM_T *simu){
 		    DITHER_T *pd=simu->dither[iwfs];
 		    //Scale the output due to accumulation
 		    for(int isa=0; isa<nsa; isa++){
-			dadd(powfs[ipowfs].intstat->i0->p+isa+jwfs*nsa, 0, pd->i0->p[isa], scale1);
-			dadd(powfs[ipowfs].intstat->gx->p+isa+jwfs*nsa, 0, pd->gx->p[isa], scale1);
-			dadd(powfs[ipowfs].intstat->gy->p+isa+jwfs*nsa, 0, pd->gy->p[isa], scale1);
+			dadd(powfs[ipowfs].intstat->i0->p()+isa+jwfs*nsa, 0, pd->i0->p[isa], scale1);
+			dadd(powfs[ipowfs].intstat->gx->p()+isa+jwfs*nsa, 0, pd->gx->p[isa], scale1);
+			dadd(powfs[ipowfs].intstat->gy->p()+isa+jwfs*nsa, 0, pd->gy->p[isa], scale1);
 		    }
 		    dcellzero(pd->i0);
 		    dcellzero(pd->gx);
@@ -872,12 +870,12 @@ static void wfsgrad_dither_post(SIM_T *simu){
 		      and subtract from the gradient offset to prevent sudden
 		      jump of gradient measurement.*/
 		    dmat *goff=0;
-		    calc_phygrads(&goff, powfs[ipowfs].intstat->i0->p+jwfs*nsa, parms, powfs, iwfs, parms->powfs[ipowfs].phytypesim);
+		    calc_phygrads(&goff, powfs[ipowfs].intstat->i0->p()+jwfs*nsa, parms, powfs, iwfs, parms->powfs[ipowfs].phytypesim);
 		    dadd(&simu->gradoff->p[iwfs], 1, goff, -1);
 		    if(parms->dbg.i0drift){//outer loop to prevent i0 from drifting.
 			dzero(goff);
 			//Compute CoG of i0 + goff and drive it toward gradncpa with low gain (0.1)
-			calc_phygrads(&goff, powfs[ipowfs].intstat->i0->p+jwfs*nsa, parms, powfs, iwfs, 2);
+			calc_phygrads(&goff, powfs[ipowfs].intstat->i0->p()+jwfs*nsa, parms, powfs, iwfs, 2);
 			dadd(&goff, 1, simu->gradoff->p[iwfs], 1);
 			if(powfs[ipowfs].gradncpa){
 			    dadd(&goff, 1, powfs[ipowfs].gradncpa->p[jwfs], -1);
@@ -1016,7 +1014,7 @@ void wfsgrad_twfs_recon(SIM_T *simu){
 		const int nsa=simu->powfs[ipowfs].saloc->nloc;
 		drawopd("Goffx",simu->powfs[ipowfs].saloc, simu->gradoff->p[iwfs]->p,NULL,
 			"WFS Offset (x)","x (m)", "y (m)", "x %d",  iwfs);
-		drawopd("Goffy",simu->powfs[ipowfs].saloc, simu->gradoff->p[iwfs]->p+nsa, NULL,
+		drawopd("Goffy",simu->powfs[ipowfs].saloc, simu->gradoff->p[iwfs]->p()+nsa, NULL,
 			"WFS Offset (y)","x (m)", "y (m)", "y %d",  iwfs);
 	    }
 	    if(parms->save.dither){

@@ -1112,15 +1112,19 @@ static void init_simu_dm(SIM_T *simu){
 	    dset((dmat*)simu->dmprojsq->p[idm], invalid_val);
 	}
 	if(parms->fit.square){/*dmreal is already square.*/
-	    free(simu->dmrealsq->p[idm]->p);
+	    simu->dmrealsq->p[idm]->Ref(*simu->dmreal->p[idm]);
+	    /*free(simu->dmrealsq->p[idm]->p);
 	    simu->dmrealsq->p[idm]->p=simu->dmreal->p[idm]->p;
 	    free(simu->dmrealsq->p[idm]->nref);
-	    simu->dmrealsq->p[idm]->nref=NULL;
+	    simu->dmrealsq->p[idm]->nref=NULL;*/
 	    if(simu->dmprojsq){
+		simu->dmprojsq->p[idm]->Ref(*simu->dmproj->p[idm]);
+		/*
 		free(simu->dmprojsq->p[idm]->p);
 		simu->dmprojsq->p[idm]->p=simu->dmproj->p[idm]->p;
 		free(simu->dmprojsq->p[idm]->nref);
 		simu->dmprojsq->p[idm]->nref=NULL;
+		*/
 	    }
 	}
     }
@@ -1846,9 +1850,9 @@ void save_skyc(POWFS_T *powfs, RECON_T *recon, const PARMS_T *parms){
     fclose(fp);
     for(int jpowfs=0; jpowfs<npowfs_ngs; jpowfs++){
 	int ipowfs=powfs_ngs[jpowfs];
-	locwrite(powfs[ipowfs].loc,"%s/powfs%d_loc",dirskysim,ipowfs);
+	writebin(powfs[ipowfs].loc,"%s/powfs%d_loc",dirskysim,ipowfs);
 	writebin(powfs[ipowfs].amp, "%s/powfs%d_amp",dirskysim,ipowfs);
-	locwrite(powfs[ipowfs].saloc,"%s/powfs%d_saloc",dirskysim,ipowfs);
+	writebin(powfs[ipowfs].saloc,"%s/powfs%d_saloc",dirskysim,ipowfs);
 	if(powfs[ipowfs].gradncpa){
 	    int nsa=parms->powfs[ipowfs].order;
 	    mymkdir("%s/gradoff/", dirskysim);

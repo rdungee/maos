@@ -1000,3 +1000,476 @@ void mmap_header_ro(char **p0, uint32_t *magic, long *nx, long *ny, char **heade
     if(header0) *header0=header;
 }
 
+///Swap data elements from big/small to small/big endian. Each element has
+///length size. There are nblock bytes.
+void byteswap(char *out, char *in, size_t size, size_t nbyte){
+    switch(size){
+    case 1:
+	memcpy(out, in, nbyte);
+	break;
+    case 2:
+	for(size_t i=0; i<nbyte; i+=2){
+	    out[i]=in[i+1];
+	    out[i+1]=in[i];
+	}
+	break;
+    case 4:
+	for(size_t i=0; i<nbyte; i+=4){
+	    out[i]  =in[i+3];
+	    out[i+1]=in[i+2];
+	    out[i+2]=in[i+1];
+	    out[i+3]=in[i  ];
+	}
+	break;
+    case 8:
+    case 16:
+	for(size_t i=0; i<nbyte; i+=8){
+	    out[i  ]=in[i+7];
+	    out[i+1]=in[i+6];
+	    out[i+2]=in[i+5];
+	    out[i+3]=in[i+4];
+	    out[i+4]=in[i+3];
+	    out[i+5]=in[i+2];
+	    out[i+6]=in[i+1];
+	    out[i+7]=in[i  ];
+	}
+	break;
+    default:
+	fatal("Invalid size "<<size);
+    }
+}
+
+///Open a file.
+File::File(const std::string &filename, const char *mod){
+    fn=procfn(filename.c_str(),mod);
+    if(fn.empty()){
+	fatal(fn<<" does not exist for read");
+	quit();
+    }
+    switch(mod[0]){
+    case 'r':/*read only */
+	if((fd=open(fn.c_str(), O_RDONLY))==-1){
+	    perror("open for read");
+	}
+	break;
+    case 'w':/*write */
+    case 'a':
+	if(disable_save){
+	    warn("Saving is disabled.");
+	    fn.erase();
+	}
+	if((fd=open(fn.c_str(), O_RDWR | O_CREAT, 0666))==-1){
+	    perror("open for write");
+	}else{
+	    if(flock(fd, LOCK_EX|LOCK_NB)){
+		fatal("Trying to write to a file that is already opened for writing: "<<fn);
+	    }
+	    if(mod[0]=='w' && ftruncate(fd, 0)){/*Need to manually truncate the file. */
+		perror("ftruncate");
+		warn("Truncating "<<fn<<" failed. fd=<<fd");
+	    }
+	}
+	break;
+    default:
+	fatal("Unknown mod "<<mod);
+    }
+    if(fd==-1){
+	fatal("Unable to open file "<<fn<<" for "<<(mod[0]=='r'?"Reading":"Writing"));
+    }
+    /*check fn instead of fn. if end of .bin or .fits, disable compressing.*/
+    if(mod[0]=='w'){
+	if(check_suffix(fn.c_str(), ".bin") || check_suffix(fn.c_str(), ".fits")){
+	    isgzip=0;
+	}else if (check_suffix(fn.c_str(), ".gz")){
+	    isgzip=1;
+	}else{
+	    isgzip=0;
+	}
+    }else{ 
+	uint16_t magic;
+	if(read(fd, &magic, sizeof(uint16_t))!=sizeof(uint16_t)){
+	    fatal("Unable to read "<<fn);
+	}
+	if(magic==0x8b1f){
+	    isgzip=1;
+	}else{
+	    isgzip=0;
+	}
+	lseek(fd, 0, SEEK_SET);
+    }
+    if(isgzip){
+	if(!(p=gzdopen(fd,mod))){
+	    fatal("Fatal gzdopen for "<<fn);
+	}
+    }else{
+	if(!(p=(void*)fdopen(fd,mod))){
+	    fatal("Fatal fdopen for "<<fn);
+	}
+    }
+    if(check_suffix(fn.c_str(), ".fits") || check_suffix(fn.c_str(), ".fits.gz")){
+	isfits=1;
+    }
+}
+
+File::~File(){
+    if(isgzip){
+	gzclose((voidp)p);
+    }else{
+	fclose((FILE*)p);
+    }
+}
+
+void File::WriteFile(const void* ptr, size_t size, size_t nmemb){
+    if(isgzip){
+	if(gzwrite((voidp)p, ptr, size*nmemb)!=(int)(size*nmemb)){
+	    perror("gzwrite");
+	    fatal("write to "<<fn<<" failed");
+	}
+    }else{
+	if(fwrite((void*)ptr, size, nmemb, (FILE*)p)!=nmemb){
+	    perror("fwrite");
+	    fatal("write to "<<fn<<" failed");
+	}
+    }
+}
+void File::WriteDo(const void* ptr, size_t size, size_t nmemb){
+    if(!nmemb) return;
+    /*a wrapper to call either fwrite or gzwrite based on flag of isgzip*/
+    if(isfits && BIGENDIAN==0){
+	int length=size*nmemb;
+	if(!length) return;
+	/* write a block of 2880 bytes each time, with big-endianness.*/
+	const int bs=2880;
+	char junk[bs];
+	int nb=(length+bs-1)/bs;
+	char *in=(char*)ptr;
+	for(int ib=0; ib<nb; ib++){
+	    int nd=length<bs?length:bs;
+	    byteswap(junk, in, size, nd);
+	    /* use bs instead of nd to test tailing blanks*/
+	    in+=bs; length-=bs;
+	    if(length<0){
+		memset(junk+nd, 0, (bs-nd)*sizeof(char));
+	    }
+	    WriteFile(junk, size, bs);
+	}
+    }else{
+	WriteFile(ptr, size, nmemb);
+    }
+}
+void File::ReadFile(void* ptr, size_t size, size_t nmemb){
+    int ans;
+    if(isgzip){
+	ans=(gzread((voidp)p, (void*)ptr, size*nmemb)<=0);
+    }else{
+	ans=(fread((void*)ptr, size, nmemb, (FILE*)p)!=nmemb);
+    }
+    if(ans){
+	fatal("Fatal happening while reading "<<fn);
+    }
+}
+void File::ReadDo(void* ptr, size_t size, size_t nmemb){
+    if(isfits && size>1){/*need to do byte swapping.*/
+	const long bs=2880;
+	char junk[bs];
+	long length=size*nmemb;
+	long nb=(length+bs-1)/bs;
+	char *out=(char*)ptr;
+	for(int ib=0; ib<nb; ib++){
+	    ReadFile(junk, size, bs);
+	    int nd=length<bs?length:bs;
+	    byteswap(out, junk, size, nd);
+	    out+=bs;
+	    length-=bs;
+	}
+    }else{
+	ReadFile(ptr, size, nmemb);
+    }
+}
+
+
+void File::WriteLong(Int count, ...){
+    va_list ap;
+    int i;
+    va_start (ap, count);              /*Initialize the argument list. */
+    for (i = 0; i < count; i++){
+	uint64_t *addr=va_arg (ap, uint64_t*);  /*Get the next argument value.   */
+	Write(addr, 1);
+    }
+    va_end (ap);     
+}
+
+void File::ReadLong(Int count, ...){
+    va_list ap;
+    int i;
+    va_start (ap, count);              /*Initialize the argument list. */
+    for (i = 0; i < count; i++){
+	uint64_t *addr=va_arg (ap, uint64_t*);  /*Get the next argument value.   */
+	Read(addr, 1);
+    }
+    va_end (ap);   
+}
+
+void File::ReadBinHeader(Header& header){
+    uint32_t magic,magic2;
+    uint64_t nlen, nlen2;
+    if(isfits) fatal("fits file is not supported");
+    while(1){
+	/*read the magic number.*/
+	Read(&magic, 1);
+	/*If it is hstr, read or skip it.*/
+	if((magic&M_SKIP)==M_SKIP){
+	    continue;
+	}else if(magic==M_HEADER){
+	    Read(&nlen, 1);
+	    if(nlen>0){
+		/*zfseek failed in cygwin (gzseek). so we already readin the hstr instead.*/
+		char hstr2[nlen];
+		Read(hstr2, nlen);
+		hstr2[nlen-1]='\0'; /*make sure it is NULL terminated. */
+		header.str+=hstr2;
+	    }
+	    Read(&nlen2, 1);
+	    Read(&magic2, 1);
+	    if(magic!=magic2 || nlen!=nlen2){
+		fatal("Header string verification failed: magic="<<magic<<", magic2="<<magic2<<", nlen="<<nlen<<", nlen2"<<nlen2);
+	    }
+	}else{ //Finish
+	    header.magic=magic;
+	    ReadLong(2, &header.nx, &header.ny);
+	    return;
+	}
+    }/*while*/
+    fatal("Read bin header failed");
+}
+
+void File::WriteBinHeader(const char *str){
+    if(!str) return;
+    if(isfits) fatal("fits file is not supported");
+    uint32_t magic=M_HEADER;
+    uint64_t nlen=strlen(str)+1;
+    /*make str 8 byte alignment. */
+    char *str2=strdup(str);
+    if(nlen % 8 != 0){
+	nlen=(nlen/8+1)*8;
+	str2=(char*)realloc(str2, nlen);
+    }
+    Write(&magic, 1);
+    Write(&nlen, 1);
+    Write(str2, nlen);
+    Write(&nlen, 1);
+    Write(&magic, 1);
+    free(str2);
+}
+
+void File::WriteFitsHeader(const char *str, uint32_t magic, int count, ...){
+    uint64_t naxis[count];
+    va_list ap;
+    va_start (ap, count);              /*Initialize the argument list. */
+    int empty=0;
+    for (int i = 0; i < count; i++){
+	uint64_t *addr=va_arg (ap, uint64_t*);  /*Get the next argument value.   */
+	if((*addr)==0) empty=1;
+	naxis[i]=*addr;
+    }
+    va_end(ap);
+
+    if(empty) count=0;
+
+    int bitpix=0;
+    switch(magic & 0xFFFF){
+    case M_FLT:
+	bitpix=-32;
+	break;
+    case M_DBL:
+	bitpix=-64;
+	break;
+    case M_INT32:
+	bitpix=32;
+	break;
+    case M_INT16:
+	bitpix=16;
+	break;
+    case M_INT8:
+	bitpix=8;
+	break;
+    default:
+	fatal("Data type is not yet supported.");
+    }
+    const int nh=36;
+    char header[nh][80];
+    memset(header, ' ', sizeof(char)*36*80);
+    int hc=0;
+    if(isfits==1){
+	snprintf(header[hc], 80, "%-8s= %20s", "SIMPLE", "T");    header[hc][30]=' '; hc++;
+	isfits++;
+    }else{
+	snprintf(header[hc], 80, "%-8s= %s", "XTENSION", "'IMAGE   '");    header[hc][20]=' '; hc++;
+    }
+    snprintf(header[hc], 80, "%-8s= %20d", "BITPIX", bitpix); header[hc][30]=' '; hc++;
+    snprintf(header[hc], 80, "%-8s= %20d", "NAXIS", count);   header[hc][30]=' '; hc++;
+#define FLUSH_OUT /*write a page block and reset */	\
+	if(hc==nh){					\
+	    Write((char*)header, 36*80);		\
+	    memset(header, ' ', sizeof(char)*36*80);	\
+	    hc=0;					\
+	}
+    for (int i = 0; i < count; i++){
+	FLUSH_OUT;
+	snprintf(header[hc], 80, "%-5s%-3d= %20lu", "NAXIS", i+1, 
+		 (unsigned long)(naxis[i])); header[hc][30]=' '; hc++;
+    }
+    if(str){
+	const char *str2=str+strlen(str);
+	while(str<str2){
+	    FLUSH_OUT;
+	    const char *nl=strchr(str, '\n');
+	    int length;
+	    int mark_end=0;
+	    if(nl){
+		length=nl-str+1;
+		if(length<=70) mark_end=1;
+	    }else{
+		length=strlen(str);
+	    }
+	    if(length>70) length=70;
+	    strncpy(header[hc], "COMMENT   ", 10);
+	    strncpy(header[hc]+10, str, length);
+	    if(mark_end){
+		header[hc][10+length-1]=(header[hc][10+length-2]==';'?' ':';');
+	    }
+	    hc++;
+	    str+=length;
+	}
+    }
+    FLUSH_OUT;
+    snprintf(header[hc], 80, "%-8s", "END"); header[hc][8]=' '; hc++;
+    Write((char*)header, 36*80);
+#undef FLUSH_OUT
+}
+    
+void File::ReadFitsHeader(Header& header){
+    char line[82];//extra space for \n \0
+    int end=0;
+    int page=0;
+    int bitpix=0;
+    int naxis=0;
+    while(!end){
+	int start=0;
+	if(page==0){
+	    try{
+		Read(line,80);
+	    }catch(...){
+		return;
+	    }
+	    line[80]='\0';
+	    if(strncmp(line, "SIMPLE", 6) && strncmp(line, "XTENSION= 'IMAGE", 16)){
+		fatal("Garbage in fits file "<<fn);
+	    }
+	    Read(line, 80); line[80]='\0';
+	    if(sscanf(line+10, "%20d", &bitpix)!=1) fatal("Unable to determine bitpix");
+	    Read(line, 80); line[80]='\0';
+	    if(sscanf(line+10, "%20d", &naxis)!=1) fatal("Unable to determine naxis");
+	    if(naxis>2) fatal("Data type not supported");
+	    if(naxis>0){
+		Read(line, 80); line[80]='\0';
+		if(sscanf(line+10, "%20lu", (unsigned long *)&header.nx)!=1) fatal("Unable to determine nx");
+	    }else{
+		header.nx=0;
+	    }
+	    if(naxis>1){
+		Read(line, 80); line[80]='\0';
+		if(sscanf(line+10, "%20lu", (unsigned long *)&header.ny)!=1) fatal("Unable to determine ny");
+	    }else{
+		header.ny=0;
+	    }
+	    start=3+naxis;
+	}
+	for(int i=start; i<36; i++){
+	    Read(line, 80); line[80]='\0';
+	    if(!strncmp(line, "END",3)){
+		end=1;
+	    }else{
+		char *hh=line;
+		int length=80;
+		int newline=1;
+		if(!strncmp(line, "COMMENT", 7)){
+		    hh=line+10;
+		    length-=10;
+		    newline=0;
+		}
+		//Remove trailing space.
+		for(int j=length-1; j>=0; j--){
+		    if(isspace((int)hh[j])){
+			hh[j]='\0';
+			length--;
+		    }else{
+			if(newline){
+			    hh[j+1]='\n';
+			    hh[j+2]='\0';
+			}
+			break;
+		    }
+		}
+		if(length>0){
+		    header.str+=hh;
+		}
+	    }
+	}
+	page++;
+    }
+    switch(bitpix){
+    case -32:
+	header.magic=M_FLT;
+	break;
+    case -64:
+	header.magic=M_DBL;
+	break;
+    case 32:
+	header.magic=M_INT32;
+	break;
+    case 16:
+	header.magic=M_INT16;
+	break;
+    case 8:
+	header.magic=M_INT8;
+	break;
+    default:
+	fatal("Invalid");
+    }
+}
+
+void File::WriteHeader(const Header &header){
+    if(isfits){
+	if(!iscell(header.magic)){
+	    const char *str;
+	    if(header.str.empty()){
+		str=common_header;
+	    }else{
+		str=header.str.c_str();
+	    }
+	    WriteFitsHeader(str, header.magic, 2, &header.nx, &header.ny);
+	}else{
+	    //Use cell header for every element.
+	    if(!header.str.empty()){
+		common_header=header.str.c_str();
+	    }
+	}
+    }else{
+	if(!header.str.empty()){
+	    WriteBinHeader(header.str.c_str());
+	}
+	uint32_t magic2=M_SKIP;
+	Write(&magic2, 1);
+	Write(&header.magic, 1);
+	WriteLong(2, &header.nx, &header.ny);
+    }
+}
+
+void File::ReadHeader(Header &header){
+    if(isfits){
+	ReadFitsHeader(header);
+    }else{
+	ReadBinHeader(header);
+    }
+}

@@ -35,17 +35,18 @@ typedef spint SS_INT;
 #define SS_UNFLIP(i) (((i) < 0) ? SS_FLIP(i) : (i))
 #define SS_MARKED(w,j) (w [j] < 0)
 #define SS_MARK(w,j) { w [j] = SS_FLIP (w [j]) ; }
-#define SS_CSC(A) (A && (A->nz == -1))
-#define SS_TRIPLET(A) (A && (A->nz >= 0))
+#define SS_CSC(A) (A)
+#define SS_TRIPLET(A) (0)
 
 /**
  free a sparse matrix */
 static cs *ss_spfree (cs *A)
 {
     if(A){
-	free (A->p) ;
+	delete A;
+	/*free (A->p) ;
 	free (A->i) ;
-	free (A->x) ;
+	free (A->x) ;*/
     }
     return NULL;
 }
@@ -77,25 +78,32 @@ static void *ss_realloc (void *p, SS_INT n, size_t size, SS_INT *ok)
  allocate a sparse matrix (triplet form or compressed-column form) */
 static cs *ss_spalloc (SS_INT m, SS_INT n, SS_INT nzmax, SS_INT values, SS_INT triplet)
 {
-    cs *A = (cs*)ss_calloc (1, sizeof (cs)) ;    /* allocate the cs struct */
-    if (!A) return (NULL) ;                 /* out of memory */
+    (void) values;
+    (void) triplet;
+    return new X(sp)(m,n,nzmax);
+    /*
+    cs *A = (cs*)ss_calloc (1, sizeof (cs)) ;  
+    if (!A) return (NULL) ;                 
     A->id = M_SPT;
-    A->nx = m ;                              /* define dimensions and nzmax */
+    A->nx = m ;                             
     A->ny = n ;
     A->nzmax = nzmax = SS_MAX (nzmax, 1) ;
-    A->nz = triplet ? 0 : -1 ;              /* allocate triplet or comp.col */
+    A->nz = triplet ? 0 : -1 ;              
     A->p = (SS_INT*)ss_malloc (triplet ? nzmax : n+1, sizeof (SS_INT)) ;
     A->i = (SS_INT*)ss_malloc (nzmax, sizeof (SS_INT)) ;
     A->x = values ? (SS_ENTRY*)ss_malloc (nzmax, sizeof (SS_ENTRY)) : NULL ;
     A->nref=mycalloc(1,int);
     A->nref[0]=1;
     return ((!A->p || !A->i || (values && !A->x)) ? ss_spfree (A) : A) ;
+    */
 }
 
 /**
  change the max # of entries sparse matrix */
 static SS_INT ss_sprealloc (cs *A, SS_INT nzmax)
 {
+    return A->Resize(nzmax);
+    /*
     SS_INT ok, oki, okj = 1, okx = 1 ;
     if (!A) return (0) ;
     if (nzmax <= 0) nzmax = (SS_CSC (A)) ? (A->p [A->ny]) : A->nz ;
@@ -104,7 +112,7 @@ static SS_INT ss_sprealloc (cs *A, SS_INT nzmax)
     if (A->x) A->x = (SS_ENTRY*)ss_realloc (A->x, nzmax, sizeof (SS_ENTRY), &okx) ;
     ok = (oki && okj && okx) ;
     if (ok) A->nzmax = nzmax ;
-    return (ok) ;
+    return (ok) ;*/
 }
 
 /**

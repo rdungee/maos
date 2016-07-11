@@ -29,11 +29,13 @@
    true, p is treated as external resource and is not reference counted.
 */
 INLINE X(mat) *X(new_do)(long nx, long ny, T *p, int ref){
+    return new X(mat)(nx, ny, p, ref);
+    /*
     X(mat) *out=mycalloc(1,X(mat));
     out->id=M_T;
     out->nx=nx;
     out->ny=ny;
-    if(ref){/*the data does not belong to us. */
+    if(ref){//the data does not belong to us. 
 	if(!p){
 	    error("When ref is 1, p must not be NULL.\n");
 	}
@@ -46,7 +48,7 @@ INLINE X(mat) *X(new_do)(long nx, long ny, T *p, int ref){
 	out->nref=mycalloc(1,int);
 	out->nref[0]=1;
     }
-    return out;
+    return out;*/
 }
 /**
    Creat a X(mat) object to reference an already existing vector.  Free the
@@ -67,9 +69,9 @@ X(mat) *X(new_data)(long nx, long ny, T *p){
 /**
    Create a new T matrix object. initialized all to zero.
 */
-X(mat) *X(new)(long nx, long ny){
-    return X(new_do)(nx,ny,NULL,0);
-}
+//X(mat) *X(new)(long nx, long ny){
+//    return X(new_do)(nx,ny,NULL,0);
+//}
 /**
    check the size of matrix if exist. Otherwise create it.
 */
@@ -97,13 +99,18 @@ X(mat) *X(mat_cast)(const void *A){
 */
 void X(free_do)(X(mat) *A, int keepdata){
     if(!A) return;
+    if(keepdata){
+	error("Not yet supported\n");
+    }
+    delete A;
+    /*
     assert_mat(A);
     int free_extra=0;
     if(A->nref){
 	int nref=atomicadd(A->nref, -1);
 	if(!nref){
 	    if(!keepdata){
-		if(A->mmap){/*data is mmap'ed. */
+		if(A->mmap){//data is mmap'ed. 
 		    mmap_unref(A->mmap);
 		}else{
 		    free_extra=1;
@@ -124,6 +131,7 @@ void X(free_do)(X(mat) *A, int keepdata){
 	free(A->header);
     }
     free(A);
+    */
 }
 
 /**
@@ -138,6 +146,8 @@ void X(free_keepdata)(X(mat) *A){
 */
 X(mat) *X(ref)(const X(mat) *in){
     if(!in) return NULL;
+    return new X(mat)(*in);
+    /*
     assert_mat(in);
     X(mat) *out=mycalloc(1,X(mat));
     memcpy(out,in,sizeof(X(mat)));
@@ -149,7 +159,7 @@ X(mat) *X(ref)(const X(mat) *in){
     }else{
 	atomicadd(in->nref, 1);
     }
-    return out;
+    return out;*/
 }
 /**
    create an new X(mat) reference another with different shape.
@@ -200,6 +210,8 @@ X(mat) *X(sub)(const X(mat) *in, long sx, long nx, long sy, long ny){
    possible.
 */
 void X(resize)(X(mat) *A, long nx, long ny){
+    if(A) A->Resize(nx, ny);
+    /*
     assert_mat(A);
     if(!A->nref || A->nref[0]>1){
 	error("Resizing a referenced vector\n");
@@ -211,7 +223,7 @@ void X(resize)(X(mat) *A, long nx, long ny){
 	if(nx*ny>A->nx*A->ny){
 	    memset(A->p+A->nx*A->ny, 0, (nx*ny-A->nx*A->ny)*sizeof(T));
 	}
-    }else{/*copy memory to preserve data*/
+    }else{//copy memory to preserve data
 	T *p=mycalloc(nx*ny,T);
 	long minx=A->nx<nx?A->nx:nx;
 	long miny=A->ny<ny?A->ny:ny;
@@ -222,7 +234,7 @@ void X(resize)(X(mat) *A, long nx, long ny){
 	A->p=p;
     }
     A->nx=nx;
-    A->ny=ny;
+    A->ny=ny;*/
 }
 
 /**
@@ -509,6 +521,10 @@ X(cell) *X(cell_cast)(const void *A_){
    When a cell is empty, it is created with a (0,0) array and cannot be overriden.
 */
 X(cell) *X(cellnew2)(const X(cell) *A){
+    X(cell) *out=new X(cell);
+    out->NewDeep(*A);
+    return out;
+    /*
     X(cell) *out=X(cellnew)(A->nx, A->ny);
     long tot=0;
     for(long i=0; i<A->nx*A->ny; i++){
@@ -526,12 +542,18 @@ X(cell) *X(cellnew2)(const X(cell) *A){
 	    out->p[i]=X(new)(0,0);//place holder to avoid been overriden.
 	}
     }
-    return out;
+    return out;*/
 }
 /**
    Create an new X(cell) with X(mat) specified. Each block is stored continuously in memory.
 */
 X(cell) *X(cellnew3)(long nx, long ny, long *nnx, long *nny){
+    X(cell) *out=new X(cell);
+    lmat pnnx(nx, ny, nnx);
+    lmat pnny(nx, ny, nny);
+    out->NewDeep(nx, ny, pnnx, pnny);
+    return out;
+    /*
     long tot=0;
     for(long i=0; i<nx*ny; i++){
 	tot+=nnx[i]*(nny?nny[i]:1);
@@ -544,12 +566,16 @@ X(cell) *X(cellnew3)(long nx, long ny, long *nnx, long *nny){
 	out->p[i]=X(new_ref)(nnx[i], (nny?nny[i]:1), out->m->p+tot);
 	tot+=nnx[i]*(nny?nny[i]:1);
     }
-    return out;
+    return out;*/
 }
 /**
    Create an new X(cell) with X(mat) specified. Each block is stored continuously in memory.
 */
 X(cell) *X(cellnewsame)(long nx, long ny, long mx, long my){
+    X(cell) *out=new X(cell);
+    out->NewDeep(nx, ny, mx, my);
+    return out;
+    /*
     long tot=nx*ny*mx*my;    
     if(!tot) return NULL;
     X(cell) *out=X(cellnew)(nx,ny);
@@ -559,7 +585,7 @@ X(cell) *X(cellnewsame)(long nx, long ny, long mx, long my){
 	out->p[i]=X(new_ref)(mx, my, out->m->p+tot);
 	tot+=mx*my;
     }
-    return out;
+    return out;*/
 }
 /**
    creat a X(cell) reference an existing X(cell) by referencing the
@@ -567,6 +593,10 @@ X(cell) *X(cellnewsame)(long nx, long ny, long mx, long my){
 */
 X(cell) *X(cellref)(const X(cell) *in){
     if(!in) return NULL;
+    X(cell) *out=new X(cell)(*in);
+    return out;
+    
+    /*
     X(cell) *out=X(cellnew)(in->nx, in->ny);
     if(in->m){
 	out->m=X(ref)(in->m);
@@ -578,7 +608,7 @@ X(cell) *X(cellref)(const X(cell) *in){
 	    out->p[i]=X(ref)(in->p[i]);
 	}
     }
-    return out;
+    return out;*/
 }
 
 /**
@@ -689,6 +719,7 @@ void X(celldropempty)(X(cell) **A0, int dim){
 			if(count!=ix){
 			    for(int iy=0; iy<A->ny; iy++){
 				IND(B,count,iy)=IND(A,ix,iy);
+				IND(A,ix,iy)=0;
 			    }
 			}
 			count++;
@@ -696,7 +727,8 @@ void X(celldropempty)(X(cell) **A0, int dim){
 			warning("row %d dropped\n", ix);
 		    }
 		}
-		free(A->p); free(A);
+		X(cellfree)(A);
+		//free(A->p); free(A);
 		A=B;
 	    }
 	}
@@ -725,7 +757,8 @@ void X(celldropempty)(X(cell) **A0, int dim){
 	    X(cellfree)(A);
 	    *A0=NULL;
 	}else{
-	    A->p=myrealloc(A->p,A->ny*A->nx,X(mat)*);
+	    A->Resize(A->nx, A->ny);
+	    //A->p=myrealloc(A->p,A->ny*A->nx,X(mat)*);
 	}
     }else{
 	error("Invalid dim: %d\n",dim);

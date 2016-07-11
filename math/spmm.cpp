@@ -459,7 +459,8 @@ void X(celladd)(void *A_, R ac, const void *B_, R bc){
 	    if(issp(B)){//add sparse to sparse
 		X(sp)* tmp=X(spadd2)((X(sp)*)(*pA), ac, (X(sp)*)B, bc);
 		X(spmove)((X(sp)*)(*pA), (X(sp)*)tmp);
-		free(tmp);
+		//free(tmp);
+		delete tmp;
 	    }else{
 		error("Adding dense to sparse matrix is not allowed.\n");
 	    }

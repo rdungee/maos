@@ -39,6 +39,13 @@ void default_quitfun(const char *msg);
 #include <alloca.h>
 #endif
 
+#if defined(DLONG)
+typedef long spint; /*Only optionally activated in AMD64. */
+typedef long Int;
+#else
+typedef int spint;  /*This is always 32 bit. */
+typedef int Int;
+#endif
 
 #if defined(__cplusplus) && !defined(AOS_CUDA_GPU_H)
 //c++ mode, not CUDA
@@ -48,10 +55,17 @@ void default_quitfun(const char *msg);
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <iostream>
+#include <sstream>
+#include <string>
 using std::signbit;
 using std::isfinite;
 using std::isnan;
 using std::strerror;
+using std::cout;
+using std::cerr;
+using std::endl;
+using std::ostream;
 #else//C99 mode or CUDA.
 #include <signal.h>
 #include <stdarg.h>
@@ -90,6 +104,16 @@ using std::strerror;
 
 #define BASEFILE (strrchr(__FILE__, '/') ?strrchr(__FILE__, '/')+1  : __FILE__)
 
+#define stream2str(A) static_cast<std::ostringstream&>(std::ostringstream().flush() << A).str()
+class illegal:public std::exception{
+    std::string msg_;
+public:
+    virtual const char *what()const throw() override{
+	return msg_.c_str();
+    }
+    illegal(const std::string&msg=0):msg_(msg){}
+    virtual ~illegal() throw(){}
+};
 /*
   use () to make the statements a single statement.
 */
@@ -126,6 +150,11 @@ using std::strerror;
 
 #define warning_once(A...) ({static int done=0; if(!done){done=1; warning(A);}})
 #define info_once(A...) ({static int done=0; if(!done){done=1; info2(A);}})
+
+//Stream link
+#define debug(A) cout<<"INFO("<<BASEFILE<<":"<<__LINE__<<") "<<A<<endl
+#define warn(A) cerr<<"\033[01;31mWARN("<<BASEFILE<<":"<<__LINE__<<") "<<A<<"\033[00;00m"<<endl
+#define fatal(A) throw illegal(stream2str("\033[01;31mFATAL("<<BASEFILE<<":"<<__LINE__<<") "<<A<<"\033[00;00m"<<endl))
 
 #endif
 #ifndef assert

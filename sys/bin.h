@@ -57,10 +57,7 @@
 #define M_MAP64     0x016402/*map_t, compatible with M_DBL*/
 #define M_RECTMAP64 0x026402/*map_t, compatible with M_DBL*/
 #define M_LOC64     0x036402/*loc_t with double data*/
-INLINE int iscell(const void *id){
-    const uint32_t magic=*((const uint32_t*)id);
-    return (((magic)&0x6410)==0x6410 || ((magic)&0x6420) == 0x6420);
-}
+
 #if LONG_MAX==2147483647L //long is 32 bit
 #define M_LONG M_INT32
 #elif LONG_MAX==9223372036854775807L
@@ -84,7 +81,9 @@ INLINE int iscell(const void *id){
 #define M_SSP M_SSP32
 #define M_ZSP M_ZSP32
 #endif
-
+inline bool iscell(uint32_t magic){
+    return (((magic)&0x6410)==0x6410 || ((magic)&0x6420) == 0x6420);
+}
 #define USE_ZLIB_H 0
 #if USE_ZLIB_H
 #include <zlib.h> /*zlib.h in ubuntu sucks */
@@ -155,4 +154,93 @@ mmap_t*mmap_ref(mmap_t *in);
 int mmap_open(char *fn, int rw);
 void mmap_header_rw(char **p0, char **header0, uint32_t magic, long nx, long ny, const char *header);
 void mmap_header_ro(char **p0, uint32_t *magic, long *nx, long *ny, char **header0);
+
+void byte_swap(char *out, char *in, size_t size, size_t nbyte);
+
+///Header information for reading from/writing to file.
+struct Header{
+    uint32_t magic;///<The magic number
+    uint64_t nx;   ///<The leading dimension
+    uint64_t ny;   ///<The trailing dimension
+    std::string str;    ///<Any information describing the data.
+};
+
+class File{
+private:
+    void *p=0;    /**<Pointer to FILE or void**/
+    Int isgzip=0; /**<Is the file gzipped*/
+    Int isfits=0; /**<Is the file in fits format*/
+    std::string fn;    /**<File name*/
+    Int fd=0;     /**<File descriptor*/
+    const char *common_header=0;/**<For fits file, common header for every array.*/
+private:
+    void WriteFile(const void *p, size_t size, size_t nmemb);
+    void ReadFile(void *p, size_t size, size_t nmemb);
+    void WriteDo(const void *p, size_t size, size_t nmemb);
+    void ReadDo(void *p, size_t size, size_t nmemb);
+    void WriteLong(Int count, ...);
+    void ReadLong(Int count, ...);
+    void ReadBinHeader(Header &header);
+    void WriteBinHeader(const char *);
+    void WriteFitsHeader(const char *, uint32_t magic, int count, ...);
+    void ReadFitsHeader(Header &header);
+public:
+    File(Int sock, const char *mod);
+    File(const std::string &fn, const char *mod);
+    ~File();
+    const char* GetFileName(){return fn.c_str();}
+    void WriteHeader(const Header &header);
+    void ReadHeader(Header &header);
+    template <typename T>
+    void Read(T *ptr, size_t nmemb){
+	ReadDo(ptr, sizeof(T), nmemb);
+    }
+    template <typename T>
+    void Write(const T *ptr, size_t nmemb){
+	WriteDo(ptr, sizeof(T), nmemb);
+    }
+    ///Seek
+    Int Seek(long offset, int whence){
+	if(isgzip){
+	    return gzseek((voidp)p,offset,whence)<0?-1:0;
+	}else{
+	    return fseek((FILE*)p,offset,whence);
+	}
+    }
+
+    ///Rewind
+    void Rewind(){
+	if(isgzip){
+	    if(gzrewind((voidp)p)){
+		fatal("Failed to rewind");
+	    }
+	}else{
+	    rewind((FILE*)p);
+	}
+    }
+
+    ///Tell position
+    Int Pos(){
+	if(isgzip){
+	    return gztell((voidp)p);
+	}else{
+	    return ftell((FILE*)p);
+	}
+    }
+
+    ///Tell whether we are able to reach end of file
+    Int Eof(){
+	return Seek(1, SEEK_SET)<0?-1:0;
+    }
+    
+    ///Flush
+    void Flush(){
+	if(isgzip){
+	    gzflush(p,4);
+	}else{
+	    fflush((FILE*)p);
+	}
+    }
+};
+
 #endif

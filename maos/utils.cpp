@@ -442,10 +442,9 @@ void wfslinearity(const PARMS_T *parms, POWFS_T *powfs, const int iwfs){
     double pixthetay=parms->powfs[ipowfs].pixtheta;
     dmat **mtche=NULL;
     if(parms->powfs[ipowfs].phytypesim==1){
-	if(powfs[ipowfs].intstat->mtche->ny==1){
-	    mtche=powfs[ipowfs].intstat->mtche->p;
-	}else{
-	    mtche=powfs[ipowfs].intstat->mtche->p+nsa*wfsind;
+	mtche=powfs[ipowfs].intstat->mtche->p;
+	if(powfs[ipowfs].intstat->mtche->ny>1){
+	    mtche+=nsa*wfsind;
 	}
     }
     int nllt=parms->powfs[ipowfs].llt?parms->powfs[ipowfs].llt->n:0;
@@ -458,16 +457,14 @@ void wfslinearity(const PARMS_T *parms, POWFS_T *powfs, const int iwfs){
 	for(int iwvl=0; iwvl<nwvl; iwvl++){
 	    if(powfs[ipowfs].etfsim[iwvl].p1){
 		pccwm=ccwmcol;
-		if(powfs[ipowfs].etfsim[iwvl].p1->ny==1)
-		    petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p1->p;
-		else
-		    petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p1->p+wfsind*nsa;
+		petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p1->p;
+		if(powfs[ipowfs].etfsim[iwvl].p1->ny>1)
+		    petf[iwvl]+=wfsind*nsa;
 	    }else{
 		pccwm=ccwm;
-		if(powfs[ipowfs].etfsim[iwvl].p2->ny==1)
-		    petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p2->p;
-		else
-		    petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p2->p+wfsind*nsa;
+		petf[iwvl]=powfs[ipowfs].etfsim[iwvl].p2->p;
+		if(powfs[ipowfs].etfsim[iwvl].p2->ny>1)
+		    petf[iwvl]+=wfsind*nsa;
 	    }
 	}
     }
@@ -640,7 +637,7 @@ void lgs_wfs_sph_psd(const PARMS_T *parms, POWFS_T *powfs, RECON_T *recon, const
     double pixthetay=parms->powfs[ipowfs].pixtheta;
     const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
     double *srot=(parms->powfs[ipowfs].radpix)?
-	powfs[ipowfs].srot->p[powfs[ipowfs].srot->ny>1?wfsind:0]->p:NULL;
+	powfs[ipowfs].srot->p[powfs[ipowfs].srot->ny>1?wfsind:0]->p():NULL;
     for(int icol=0; icol<1000; icol+=dtrat){
 	setup_powfs_etf(powfs, parms, ipowfs, 0, icol);
 	gensei(parms, powfs, ipowfs);
@@ -858,15 +855,14 @@ void calc_phygrads(dmat **pgrad, dmat *ints[], const PARMS_T *parms, const POWFS
     dmat **mtche=NULL;
     double *i0sum=NULL;
     if(phytype==1){
-	if(powfs[ipowfs].intstat->mtche->ny==1){
 	    mtche=powfs[ipowfs].intstat->mtche->p;
 	    i0sum=powfs[ipowfs].intstat->i0sum->p;
-	}else{
-	    mtche=powfs[ipowfs].intstat->mtche->p+nsa*wfsind;
-	    i0sum=powfs[ipowfs].intstat->i0sum->p+nsa*wfsind;
+	if(powfs[ipowfs].intstat->mtche->ny>1){
+	    mtche+=nsa*wfsind;
+	    i0sum+=nsa*wfsind;
 	}
     }
-    const double *srot=(parms->powfs[ipowfs].radpix)?powfs[ipowfs].srot->p[powfs[ipowfs].srot->ny>1?wfsind:0]->p:NULL;
+    const double *srot=(parms->powfs[ipowfs].radpix)?powfs[ipowfs].srot->p[powfs[ipowfs].srot->ny>1?wfsind:0]->p():NULL;
     double pixthetax=parms->powfs[ipowfs].radpixtheta;
     double pixthetay=parms->powfs[ipowfs].pixtheta;
     /*output directly to simu->gradcl. replace */

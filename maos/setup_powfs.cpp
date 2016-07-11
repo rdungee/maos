@@ -427,10 +427,10 @@ setup_powfs_geom(POWFS_T *powfs, const PARMS_T *parms,
     dfree(ampi);
  
     if(parms->save.setup){
-	locwrite((loc_t*)powfs[ipowfs].pts,"powfs%d_pts",ipowfs);
-	locwrite(powfs[ipowfs].saloc,"powfs%d_saloc",ipowfs); 
+	writebin((loc_t*)powfs[ipowfs].pts,"powfs%d_pts",ipowfs);
+	writebin(powfs[ipowfs].saloc,"powfs%d_saloc",ipowfs); 
 	writebin(powfs[ipowfs].saa,"powfs%d_saa",ipowfs);
-	locwrite(powfs[ipowfs].loc,"powfs%d_loc",ipowfs);
+	writebin(powfs[ipowfs].loc,"powfs%d_loc",ipowfs);
 	writebin(powfs[ipowfs].amp,"powfs%d_amp",ipowfs);
 	if(powfs[ipowfs].loc_tel){
 	    writebin(powfs[ipowfs].saa_tel,"powfs%d_saa_tel",ipowfs);
@@ -1128,7 +1128,7 @@ setup_powfs_llt(POWFS_T *powfs, const PARMS_T *parms, int ipowfs){
 	dfree(res);
     }
     if(parms->save.setup){
-	locwrite(llt->loc,"powfs%d_llt_loc",ipowfs);
+	writebin(llt->loc,"powfs%d_llt_loc",ipowfs);
 	writebin(llt->amp,"powfs%d_llt_amp",ipowfs);
 	writebin(llt->imcc,"powfs%d_llt_imcc",ipowfs);
 	if(llt->ncpa){
@@ -1255,17 +1255,15 @@ setup_powfs_cog(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 		sanea->p[iwfs]=dnew(nsa,2);
 	    }
 	    if(powfs[ipowfs].bkgrnd){
-		if(powfs[ipowfs].bkgrnd->ny==1){
-		    bkgrnd2=powfs[ipowfs].bkgrnd->p;
-		}else{
-		    bkgrnd2=powfs[ipowfs].bkgrnd->p+nsa*wfsind;
+		bkgrnd2=powfs[ipowfs].bkgrnd->p;
+		if(powfs[ipowfs].bkgrnd->ny>1){
+		    bkgrnd2+=nsa*wfsind;
 		}
 	    }
 	    if(powfs[ipowfs].bkgrndc){
-		if(powfs[ipowfs].bkgrndc->ny==1){
-		    bkgrnd2c=powfs[ipowfs].bkgrndc->p;
-		}else{
-		    bkgrnd2c=powfs[ipowfs].bkgrndc->p+nsa*wfsind;
+		bkgrnd2c=powfs[ipowfs].bkgrndc->p;
+		if(powfs[ipowfs].bkgrndc->ny>1){
+		    bkgrnd2c+=nsa*wfsind;
 		}
 	    }
 
@@ -1401,10 +1399,9 @@ setup_powfs_phygrad(POWFS_T *powfs,const PARMS_T *parms, int ipowfs){
 	powfs[ipowfs].neasim=dcellnew(parms->powfs[ipowfs].nwfs, 1);
 	for(int jwfs=0; jwfs<parms->powfs[ipowfs].nwfs; jwfs++){
 	    dmat **sanea=NULL;
-	    if(powfs[ipowfs].saneaxy->ny==1){
-		sanea=powfs[ipowfs].saneaxy->p;
-	    }else{
-		sanea=powfs[ipowfs].saneaxy->p+jwfs;
+	    sanea=powfs[ipowfs].saneaxy->p;
+	    if(powfs[ipowfs].saneaxy->ny>1){
+		sanea+=jwfs;
 	    }
 	    dmat *nea=dnew(nsa,3);
 	    dmat*  pnea=nea/*PDMAT*/;

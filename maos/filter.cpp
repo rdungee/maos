@@ -159,7 +159,7 @@ INLINE void clipdm(SIM_T *simu, dcell *dmcmd){
 		dmr=dm;
 	    }
 	    lcell *actstuck=simu->recon->actstuck;
-	    long *stuck=actstuck?(actstuck->p[idm]?actstuck->p[idm]->p:0):0;
+	    long *stuck=actstuck?(actstuck->p[idm]?actstuck->p[idm]->p():0):0;
 	    int count=0,trials=0;
 	    do{
 		count=0;

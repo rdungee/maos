@@ -19,11 +19,6 @@
 #ifndef AOS_MATH_NUMTYPE_H
 #define AOS_MATH_NUMTYPE_H
 #include "../sys/sys.h"
-#if defined(DLONG)
-typedef long spint; /*Only optionally activated in AMD64. */
-#else
-typedef int spint;  /*This is always 32 bit. */
-#endif
 
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795
@@ -69,6 +64,8 @@ typedef complex<float> fcomplex;
 #define COMPLEX(A,B) dcomplex(A,B)
 #define DCOMPLEX(A,B) dcomplex(A,B)
 #define FCOMPLEX(A,B) fcomplex(A,B)
+typedef double Real;
+typedef dcomplex Comp;
 #define fabs std::abs
 #define cabs fabs
 #define cimag imag
@@ -88,6 +85,27 @@ typedef complex<float> fcomplex;
 #define csqrtf sqrt
 #define clogf log
 #define cargf arg
+/*
+INLINE dcomplex operator*(double A, const dcomplex &B){
+    return B*A;
+}
+INLINE fcomplex operator*(float A, const fcomplex &B){
+    return B*A;
+}
+INLINE dcomplex operator+(double A, const dcomplex &B){
+    return B+A;
+}
+INLINE dcomplex operator-(double A, const dcomplex &B){
+    return -B+A;
+}
+INLINE fcomplex operator+(float A, const fcomplex &B){
+    return B+A;
+}
+INLINE fcomplex operator-(float A, const fcomplex &B){
+    return -B+A;
+}
+*/
+//Handling mismatched floating type operation.
 INLINE fcomplex operator*(double A, const fcomplex &B){
     return B*(float)A;
 }

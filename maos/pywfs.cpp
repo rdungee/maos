@@ -202,7 +202,7 @@ void pywfs_setup(POWFS_T *powfs, const PARMS_T *parms, APER_T *aper, int ipowfs)
     }
     if(parms->save.setup){
 	writebin(pywfs->si, "powfs%d_si0", ipowfs);
-	locwrite(pywfs->locfft->loc, "powfs%d_locfft", ipowfs);
+	writebin(pywfs->locfft->loc, "powfs%d_locfft", ipowfs);
     }
     {
 	//Determine subapertures area

@@ -97,8 +97,8 @@ dspcell *slaving(loccell *aloc,  /**<[in]The actuator grid*/
 		nslave++;
 	    }
 	}
-	const long *stuck=actstuck?(actstuck->p[idm]?actstuck->p[idm]->p:0):0;
-	const long *floated=actfloat?(actfloat->p[idm]?actfloat->p[idm]->p:0):0;
+	const long *stuck=actstuck?(actstuck->p[idm]?actstuck->p[idm]->p():0):0;
+	const long *floated=actfloat?(actfloat->p[idm]?actfloat->p[idm]->p():0):0;
 
 	nslavetot+=nslave;
 	info2("dm %d: there are %d slave actuators\n", idm, nslave);
@@ -490,7 +490,7 @@ dspcell* act_float_interp(loccell *aloc,  /**<[in] Actuator grid array*/
 	const double *locy=aloc->p[idm]->locy;
 	long nact=aloc->p[idm]->nloc;
 	/*actuator that is floating */
-	long *isfloat=actfloat?(actfloat->p[idm]?actfloat->p[idm]->p:0):0;
+	long *isfloat=actfloat?(actfloat->p[idm]?actfloat->p[idm]->p():0):0;
 	dsp *outit=dspnew(nact, nact, nact*4);
 	double *px=outit->x;
 	spint *pp=outit->p;

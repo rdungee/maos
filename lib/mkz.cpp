@@ -85,7 +85,7 @@ dsp * mkzt(loc_t* xloc, double *amp, loc_t *saloc,
 		}
 	    }
 	}
-	/*locwrite(sloc,"sloc_isa%d",isa); */
+	/*writebin(sloc,"sloc_isa%d",isa); */
 	/*writedbl(amploc,count,1,"amploc_isa%d",isa); */
 	sloc->nloc=count;
 	dmat *mcc=loc_mcc_ptt(sloc,amploc);
