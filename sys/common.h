@@ -152,7 +152,7 @@ public:
 #define info_once(A...) ({static int done=0; if(!done){done=1; info2(A);}})
 
 //Stream link
-#define debug(A) cout<<"INFO("<<BASEFILE<<":"<<__LINE__<<") "<<A<<endl
+#define debug(A) cerr<<"INFO("<<BASEFILE<<":"<<__LINE__<<") "<<A<<endl
 #define warn(A) cerr<<"\033[01;31mWARN("<<BASEFILE<<":"<<__LINE__<<") "<<A<<"\033[00;00m"<<endl
 #define fatal(A) throw illegal(stream2str("\033[01;31mFATAL("<<BASEFILE<<":"<<__LINE__<<") "<<A<<"\033[00;00m"<<endl))
 

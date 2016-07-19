@@ -35,47 +35,12 @@ typedef enum CEMBED{
     C_LITERAL
 }CEMBED;
 
-/*
-  We use pointers for reference counter because different array
-  may use the same pointer, but with different nx or ny
-  partition. */
-
-#define ARR(T)						\
-    uint32_t id;   /**< to identify the array type. Must be the first element*/	\
-    T *restrict p; /**<The data pointer*/		\
-    long nx;       /**< number of rows */		\
-    long ny;       /**< number of columns */		\
-    char *header;  /**<The header*/			\
-    struct mmap_t *mmap;/**< not NULL if mmaped.*/	\
-    int *nref; /**< reference count */			\
-    struct fft_t *fft					
-
-#define MATARR(T) struct{ \
-	ARR(T);		  \
-    }
-
-#define CELLARR(T) struct{	      \
-	ARR(T);			      \
-	T m;/*store continuous data*/ \
-    }
 
 typedef Mat<double> dmat;
 typedef Mat<float> smat;
 typedef Mat<dcomplex> cmat;
 typedef Mat<fcomplex> zmat;
 typedef Mat<long> lmat;
-/*typedef MATARR(double) dmat;//a double matrix object contains 2-d array of double numbers
-typedef MATARR(float) smat;
-typedef MATARR(dcomplex) cmat;
-typedef MATARR(fcomplex) zmat;
-typedef MATARR(long) lmat;
-*/
-/*
-typedef SPMATARR(double) dsp;
-typedef SPMATARR(float) ssp;
-typedef SPMATARR(dcomplex) csp;
-typedef SPMATARR(fcomplex) zsp;
-*/
 typedef Sparse<double> dsp;
 typedef Sparse<float>  ssp;
 typedef Sparse<dcomplex> csp;
@@ -84,56 +49,60 @@ typedef Sparse<fcomplex> zsp;
 
 /**
    OPD or Amplitude map defined on square/rectangular grids. with equal spacing
-   on x/y. Can be casted to dmat
+   on x/y. 
 */
-typedef struct map_t:public dmat{
-    /*The OPD, takes the same form of dmat so can be casted. */
-    //ARR(double);
-    double ox;      /**<Origin in x*/
-    double oy;      /**<Origin in y*/
-    double dx;      /**<Sampling along x*/
-    double dy;      /**<Sampling along y*/
-    double h;       /**<Heigh conjugation of this surface*/
-    double vx;      /**Wind velocity. Useful for atmospheric grid*/
-    double vy;      /**Wind velocity. Useful for atmospheric grid*/
-    double iac;     /**<Inter-actuator coupling. >0: use cubic influence function*/
+class map_t:public dmat{
+public:
+    double ox=0;      /**<Origin in x*/
+    double oy=0;      /**<Origin in y*/
+    double dx=0;      /**<Sampling along x*/
+    double dy=0;      /**<Sampling along y*/
+    double h=0;       /**<Heigh conjugation of this surface*/
+    double vx=0;      /**Wind velocity. Useful for atmospheric grid*/
+    double vy=0;      /**Wind velocity. Useful for atmospheric grid*/
+    double iac=0;     /**<Inter-actuator coupling. >0: use cubic influence function*/
 public:
     map_t(){}
     map_t(Int nxi, Int nyi, Real *pi, Real dxi, Real dyi)
-	:dmat(nxi, nyi, pi, 0),ox(-nxi/2*dxi),oy(-nyi/2*dyi),dx(dxi),dy(dyi),vx(0),vy(0),iac(0){}
+	:dmat(nxi, nyi, pi, 0),ox(-nxi/2*dxi),oy(-nyi/2*dyi),dx(dxi),dy(dyi){}
     map_t(const map_t&in):dmat(in),ox(in.ox),oy(in.oy),dx(in.dx),dy(in.dy),h(in.h),vx(in.vx),vy(in.vy),iac(in.iac){}
-} map_t;
+};
 
 /**
-   Map with different x/y sampling. Can be cased to dmat
+   Map with different x/y sampling. 
 */
-typedef struct rmap_t:public dmat{
-    //ARR(double);
-    double ox;      /**<Origin in x*/
-    double oy;      /**<Origin in y*/
-    double dx;      /**<Sampling along x (first dimension)*/
-    double dy;      /**<Sampling along y (second dimension)*/
-    double txdeg;   /**<the x tilt angle in degree wrt beam (90 is prep), */
-    double tydeg;   /**<the y tilt angle in degree wrt beam (90 is prep), */
-    double ftel;    /**<Effective focal length of the telescope*/
-    double fexit;   /**<The distance between the exit pupil and the focus*/
-    double fsurf;   /**<The distance between the tilted surface (M3) and the focus*/
+class rmap_t:public dmat{
+public:
+    double ox=0;      /**<Origin in x*/
+    double oy=0;      /**<Origin in y*/
+    double dx=0;      /**<Sampling along x (first dimension)*/
+    double dy=0;      /**<Sampling along y (second dimension)*/
+    double txdeg=0;   /**<the x tilt angle in degree wrt beam (90 is prep), */
+    double tydeg=0;   /**<the y tilt angle in degree wrt beam (90 is prep), */
+    double ftel=0;    /**<Effective focal length of the telescope*/
+    double fexit=0;   /**<The distance between the exit pupil and the focus*/
+    double fsurf=0;   /**<The distance between the tilted surface (M3) and the focus*/
+    public:
+    rmap_t(){}
+    rmap_t(Int nxi, Int nyi, Real *pi, Real dxi, Real dyi)
+	:dmat(nxi, nyi, pi, 0),ox(-nxi/2*dxi),oy(-nyi/2*dyi),dx(dxi),dy(dyi){}
+    rmap_t(const rmap_t&in):dmat(in),ox(in.ox),oy(in.oy),dx(in.dx),dy(in.dy),txdeg(in.txdeg),tydeg(in.tydeg),ftel(in.ftel),fexit(in.fexit),fsurf(in.fsurf){}
 }rmap_t;
 
 /**
    Store starting x,y for each col
 */
-typedef struct locstatcol_t{
+struct locstatcol_t{
     double xstart; /**<starting x of this column*/
     double ystart; /**<starting y of this column*/
     long   pos;    /**<starting index of this column*/
-}locstatcol_t;
+};
 
 /**
    Stores array of locstatcol_t
 
 */
-typedef struct locstat_t{
+struct locstat_t{
     locstatcol_t *cols; /**<Information about each column*/
     double dx;          /**<Sampling of the grid along x*/
     double dy;          /**<Sampling of the grid along y*/
@@ -141,21 +110,20 @@ typedef struct locstat_t{
     double ymin;        /**<Minimum y*/
     long   ncol;        /**<Number of consecutive columns found*/
     long   nx,ny;       /**<Size for embedding*/
-}locstat_t;
+};
 /**
    Struct for coordinates like plocs, xloc, aloc etc.
 */
-typedef struct loc_t{
-    uint32_t id;
-    double *locx;  /**< x coordinates of each point*/
-    double *locy;  /**< y coordinates of each point*/
-    long   nloc;   /**< number of points*/
-    double dx;     /**< Sampling along x*/
-    double dy;     /**< Sampling along y*/
-    double ht;     /**< Conjugation height of the loc grid.*/
-    double iac;    /**<Inter-actuator coupling. >0: use cubic influence function for ray tracing*/
+class loc_t:dmat{
+    pcompat<double*>locx;  /**<x coordinates of each point*/
+    pcompat<double*>locy;  /**<y coordinates of each point*/
     locstat_t *stat;/**<points to column statistics*/
-    map_t *map;    /**< point to the map used for identifying neihboring points.*/
+    map_t *map;    /**<point to the map used for identifying neihboring points.*/
+    long   nloc;   /**<number of points*/
+    double dx;     /**<Sampling along x*/
+    double dy;     /**<Sampling along y*/
+    double ht;     /**<Conjugation height of the loc grid.*/
+    double iac;    /**<Inter-actuator coupling. >0: use cubic influence function for ray tracing*/
     int npad;      /*padding when create map*/
     int ref;       /**<Data is referenced*/
 }loc_t;

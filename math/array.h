@@ -70,14 +70,14 @@ struct Magic<long int>{//always 64 bit int. long is not.
     enum { magic=M_INT64};
 };
 
-//Wraps a pointer to prevent it from being replaced.
+//For backward compatibility without exposure class internal data.
 template <typename T>
 class pcompat{
 private:
-    T p_;
+    T p_=0;
 public:
-    void SetP(T p){
-	p_=p;
+    void SetP(T pi){
+	p_=pi;
     }
     operator T() const{
 	return p_;
@@ -85,9 +85,6 @@ public:
     T operator()() const {
 	return p_;
     }
-    /*T operator+(Int offset)const{
-	return p_+offset;
-	}*/
 };
 
 /**
@@ -103,7 +100,7 @@ protected:
     explicit TwoDim(Int nxi=0, Int nyi=1):nx_(nxi),ny_(nxi?nyi:0),nx(nxi),ny(nxi?nyi:0){ };
 public:
     std::string header; /**<header for optional data and description.*/
-    virtual MakeHeader(){}
+    virtual void MakeHeader(){}
     ///Return the number of rows.    
     Int Nx() const noexcept {return nx_;}
     ///Return the number of columns.
@@ -142,35 +139,40 @@ class Array:public TwoDim{
 private:
     T *p0_=0;     /**<Records the original pointer from memory allocation.*/
     Int *nref_=0; /**<Count the reference.*/
-    Int ldx_;     /**<Leading dimension of memory allocation*/
+    Int ldx_=0;     /**<Leading dimension of memory allocation*/
     Int offset_=0;  /**<Pointer offset*/
     mutable bool protect_=0;/**<Prevent overriding of p0_*/
 public:
     pcompat<T*> p;///Temporary, for drop in compatibility.
-    struct fft_t *fft;
-    struct mmap_t *mmap;
+    struct fft_t *fft=0;
+    struct mmap_t *mmap=0;
 protected:
     ///Decrease counter and free memory. Keep other information intact.
     void CheckProtect(Int check_ref){
-	if(offset_||protect_||ldx_!=Nx()||(check_ref && nref_[0]!=1)){
+	if(protect_||(check_ref && nref_[0]!=1)){
 	    fatal("Cannot reassign/resize protected array\n");
 	}
     }
     void SetCompat();//Set compatibility flags.
  
-public:
-    ///Free the memory, leaving the rest contact.
-    void DeinitMem() noexcept{
+    ///Free the memory, leaving the rest intact.
+    void DeinitMem(int reset) noexcept{
 	//Use AtomicAdd to avoid race condition.
 	if(nref_ && AtomicAdd(nref_, -1)==0){
 	    delete [] p0_; //must use this style as T may be a class.
 	    delete nref_;
+	    reset=1;
 	}
-	p0_=0;
-	p.SetP(0);
-	nref_=0;
-	offset_=0;
-	protect_=0;
+	if(reset){
+	    p0_=0;
+	    nref_=0;
+	    ldx_=0;
+	    offset_=0;
+	    protect_=0;
+	    SetCompat();
+	}
+	//offset_=0;
+	//protect_=0;
     }
     ///Create Memory.
     void InitMem(){
@@ -179,8 +181,6 @@ public:
 	protect_=0;
 	if(Nx()>0 && Ny()>0 && !p0_){
 	    p0_=(T*)new Dev<T>[Nx()*Ny()];
-	}
-	if(!nref_){
 	    nref_=new Int;
 	    nref_[0]=1;
 	}
@@ -188,18 +188,18 @@ public:
     }
     ///Reference memory, with optional offset.
     void RefMem(const Array &in, Int offset=0){
-	if(p0_ != in.p0_){
-	    DeinitMem();
-	    p0_=in.p0_;
-	    ldx_=in.ldx_;
-	    nref_=in.nref_;
-	    if(nref_) AtomicAdd(nref_, 1);
-	    offset_=in.offset_+offset;
-	    debug("offset="<<in.offset_<<" "<<offset<<" "<<offset_<<endl);
-	}else{
-	    fatal("Cannot self Ref\n");
-	}
+	//Prevent freeing memory during self assignment.
+	if(in.nref_) AtomicAdd(in.nref_, 1);
+	DeinitMem(0);
+	p0_=in.p0_;
+	ldx_=in.ldx_;
+	nref_=in.nref_;
+	offset_=in.offset_+offset;
+	protect_=0;
+	SetCompat();
     }
+    public:
+
     ///Allocate memory and create reference counter [if size>0].
     explicit Array(Int nxi=0, int nyi=1, T*pin=0, int foreign=0)
 	:TwoDim(nxi, nyi),p0_(pin),ldx_(nx){
@@ -208,23 +208,20 @@ public:
 	}else{
 	    InitMem();
 	}
+	SetCompat();
     }
-    /*explicit Array(const TwoDim&size):TwoDim(size), ldx_(size.Nx()){
-	initMem();
-	}*/
+   
     ///Copy constructor that does reference counting.
     Array(const Array&in) noexcept
-	:TwoDim(in),p0_(in.p0_),nref_(in.nref_),ldx_(in.ldx_),offset_(in.offset_),protect_(0){
+	:TwoDim(in),p0_(in.p0_),nref_(in.nref_),ldx_(in.ldx_),offset_(in.offset_){
 	if(nref_) AtomicAdd(nref_, 1);
 	SetCompat();
     }
     ///Copy assignment operator.
     Array &operator=(const Array &in){
-	if(p0_ != in.p0_){ //avoid self-assignment.
-	    CheckProtect(0);
-	    RefMem(in);
-	    SetSize(in);
-	}
+	CheckProtect(0);
+	RefMem(in);
+	SetSize(in);
 	SetCompat();
     	return *this;	
     }
@@ -280,12 +277,12 @@ public:
     
     ///Reinitialize with same size
     void New(){
-	DeinitMem();
+	DeinitMem(1);
 	InitMem();
     }
     ///Reinit with different size
     void New(Int nxi, Int nyi){
-	DeinitMem();
+	DeinitMem(1);
 	SetSize(nxi, nyi);
 	ldx_=nxi;
 	InitMem();
@@ -294,7 +291,7 @@ public:
   
     ///Copy Content from one array to another.
     virtual ~Array(){
-	DeinitMem();
+	DeinitMem(1);
     }
     
 public:
@@ -314,11 +311,11 @@ public:
     //boundary checking. causes 3 times slow down
 
     ///Retrieves pointer to elements.
-    T*P(Int ix, Int iy){
+    T* P(Int ix, Int iy){
 	assert(ix>=0 && ix<Nx() && iy >=0 && iy<Ny());
 	return P()+ix+iy*ldx_;
     }
-    const T*P(Int ix, Int iy)const{
+    const T* P(Int ix, Int iy)const{
 	assert(ix>=0 && ix<Nx() && iy >=0 && iy<Ny());
 	return P()+ix+iy*ldx_;
     }
@@ -582,6 +579,13 @@ public:
 	SetSize(nxi, nyi);
 	return p_.Resize(nyi+1,1) && Resize(nzm);
     }
+    Int *P() {return p_.P();}
+    const Int *P() const {return p_.P();}
+    Int *I() {return i_.P();}
+    const Int *I() const {return i_.P();}
+    T *X() {return x_.P();}
+    const T *X() const {return x_.P();}
+    Int Nzmax() {return nzmax_;}
 public: //For backward compatibility
     pcompat<Int*> p;
     pcompat<Int*> i;
@@ -589,113 +593,8 @@ public: //For backward compatibility
     pcompat<Int> nzmax;
     
 };
-///Check whether two arrys match in size.
-inline void CheckMatch(const TwoDim &A, const TwoDim &B){
-    if(A.Nx()!=B.Nx() || A.Ny() != B.Ny()){
-	fatal("Mismatch: "<<A.Nx()<<"x"<<A.Ny()<<" != "<<B.Nx()<<"x"<<B.Ny());
-    }
-}
 
 
-///Copy from one array to another
-template <typename T>
-void Copy(Mat<T> &out, const Mat<T> &in){
-    if(out.P0()==in.P0()){
-	fatal("Cannot copy overlapped region\n");
-    }
-    if(!out) out.New(in);
-    else CheckMatch(out, in);
-    if(out.Ldx() == out.Nx() && in.Ldx()==in.Nx()){
-	memcpy(out.P(), in.P(), sizeof(T)*in.Nx()*in.Ny());
-    }else{
-	for(Int icol=0; icol<in.Ny(); icol++){
-	    memcpy(out.Col(icol), in.Col(icol), sizeof(T)*in.Nx());
-	}
-    }	
-}
-///Copy from one array to another
-template <typename T>
-void CopyOverlap(Mat<T> &out, const Mat<T> &in){
-    if(!out){
-	Copy(out, in);
-    }else{
-	if(out.P0()==in.P0()){
-	    fatal("Cannot copy overlapped region\n");
-	}
-	Int nymin=MIN(out.Ny(), in.Ny());
-	Int nxmin=MIN(out.Ny(), in.Nx());
-	//Column size match
-	if(out.Ldx() == out.Nx() && in.Ldx()==in.Nx() && in.Nx()==out.Nx()){
-	    memcpy(out.P(), in.P(), sizeof(T)*in.Nx()*nymin);
-	}else{
-	    for(Int icol=0; icol<nymin; icol++){
-		memcpy(out.Col(icol), in.Col(icol), sizeof(T)*nxmin);
-	    }
-	}
-    }	
-}
-///Deep Copy from one cell to another
-template <typename T>
-void CopyDeep(Cell<T> &out, const Cell<T> &in){
-    if(out.P0()==in.P0()){
-	fatal("Cannot copy overlapped region\n");
-    }
-    if(!out) out.NewDeep(in);
-    else CheckMatch(out, in);
-    for(Int iy=0; iy<in.Ny(); iy++){
-	for(Int ix=0; ix<in.Nx(); ix++){
-	    Copy(out(ix, iy), in(ix, iy));
-	}
-    }
-}
-
-///Shallow (reference) Copy from one cell to another
-template <typename T>
-void Copy(Cell<T> &out, const Cell<T> &in){
-    if(out.P0()==in.P0()){
-	fatal("Cannot copy overlapped region\n");
-    }
-    if(!out) out.New(in);
-    else CheckMatch(out, in);
-    for(Int iy=0; iy<in.Ny(); iy++){
-	for(Int ix=0; ix<in.Nx(); ix++){
-	    out(ix, iy)=in(ix, iy);
-	}
-    }
-}
-
-///Shallow (reference) Copy from one cell to another in overlapping region only.
-template <typename T>
-void CopyOverlap(Cell<T> &out, const Cell<T> &in){
-    if(!out){
-	Copy(out, in);
-    }else{
-	if(out.P0()==in.P0()){
-	    fatal("Cannot copy overlapped region\n");
-	}
-	Int nymin=MIN(out.Ny(), in.Ny());
-	Int nxmin=MIN(out.Ny(), in.Nx());
-	for(Int iy=0; iy<nymin; iy++){
-	    for(Int ix=0; ix<nxmin; ix++){
-		out(ix, iy)=in(ix, iy);
-	    }
-	}
-    }
-}
-
-/*
-///Copy from one array to another
-template <typename T>
-void Copy(Array<T> &out, const Array<T> &in){
-    if(!out) out.New(in); else CheckMatch(out, in);
-    if(out.Ldx() == out.Nx() && in.Ldx()==in.Nx()){
-	memcpy(out.P(), in.P(), sizeof(T)*in.Nx()*in.Ny());
-    }else{
-	for(Int icol=0; icol<in.Ny(); icol++){
-	    memcpy(out.Col(icol), in.Col(icol), sizeof(T)*in.Nx());
-	}
-    }	
-    }*/
 ///trait class to itentify the underline numerical type. 
 template <typename T>
 struct num_type{
@@ -858,4 +757,372 @@ void ReadBin(T&A, const char *format, ...){
     format2fn;
     File fp(fn, "rb");
     ReadData(A, fp);
+}
+
+
+///Check whether two arrys match in size.
+inline void CheckMatch(const TwoDim &A, const TwoDim &B){
+    if(A.Nx()!=B.Nx() || A.Ny() != B.Ny()){
+	fatal("Mismatch: "<<A.Nx()<<"x"<<A.Ny()<<" != "<<B.Nx()<<"x"<<B.Ny());
+    }
+}
+
+
+///Copy from one array to another
+template <typename T>
+void Copy(Mat<T> &out, const Mat<T> &in){
+    if(out.P0()==in.P0()){
+	fatal("Cannot copy overlapped region\n");
+    }
+    if(!out) out.New(in);
+    else CheckMatch(out, in);
+    if(out.Ldx() == out.Nx() && in.Ldx()==in.Nx()){
+	memcpy(out.P(), in.P(), sizeof(T)*in.Nx()*in.Ny());
+    }else{
+	for(Int icol=0; icol<in.Ny(); icol++){
+	    memcpy(out.Col(icol), in.Col(icol), sizeof(T)*in.Nx());
+	}
+    }	
+}
+///Copy from one array to another
+template <typename T>
+void CopyOverlap(Mat<T> &out, const Mat<T> &in){
+    if(!out){
+	Copy(out, in);
+    }else{
+	if(out.P0()==in.P0()){
+	    fatal("Cannot copy overlapped region\n");
+	}
+	Int nymin=MIN(out.Ny(), in.Ny());
+	Int nxmin=MIN(out.Ny(), in.Nx());
+	//Column size match
+	if(out.Ldx() == out.Nx() && in.Ldx()==in.Nx() && in.Nx()==out.Nx()){
+	    memcpy(out.P(), in.P(), sizeof(T)*in.Nx()*nymin);
+	}else{
+	    for(Int icol=0; icol<nymin; icol++){
+		memcpy(out.Col(icol), in.Col(icol), sizeof(T)*nxmin);
+	    }
+	}
+    }	
+}
+///Deep Copy from one cell to another
+template <typename T>
+void CopyDeep(Cell<T> &out, const Cell<T> &in){
+    if(out.P0()==in.P0()){
+	fatal("Cannot copy overlapped region\n");
+    }
+    if(!out) out.NewDeep(in);
+    else CheckMatch(out, in);
+    for(Int iy=0; iy<in.Ny(); iy++){
+	for(Int ix=0; ix<in.Nx(); ix++){
+	    Copy(out(ix, iy), in(ix, iy));
+	}
+    }
+}
+
+///Shallow (reference) Copy from one cell to another
+template <typename T>
+void Copy(Cell<T> &out, const Cell<T> &in){
+    if(out.P0()==in.P0()){
+	fatal("Cannot copy overlapped region\n");
+    }
+    if(!out) out.New(in);
+    else CheckMatch(out, in);
+    for(Int iy=0; iy<in.Ny(); iy++){
+	for(Int ix=0; ix<in.Nx(); ix++){
+	    out(ix, iy)=in(ix, iy);
+	}
+    }
+}
+
+///Shallow (reference) Copy from one cell to another in overlapping region only.
+template <typename T>
+void CopyOverlap(Cell<T> &out, const Cell<T> &in){
+    if(!out){
+	Copy(out, in);
+    }else{
+	if(out.P0()==in.P0()){
+	    fatal("Cannot copy overlapped region\n");
+	}
+	Int nymin=MIN(out.Ny(), in.Ny());
+	Int nxmin=MIN(out.Ny(), in.Nx());
+	for(Int iy=0; iy<nymin; iy++){
+	    for(Int ix=0; ix<nxmin; ix++){
+		out(ix, iy)=in(ix, iy);
+	    }
+	}
+    }
+}
+
+///Modifying element by element
+template <typename T, typename F>
+void Apply(Mat<T>& A, F fun){
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    fun(A(ix, iy));
+	}
+    }
+}
+
+///Reduction operation for all elements without modifying
+template <typename T, typename F>
+void Apply(const Mat<T>& A, F fun){
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    fun(A(ix, iy));
+	}
+    }
+}
+///Modifying only diagonal elements
+template <typename T, typename F>
+void ApplyDiag(Mat<T>& A, F fun){
+    if(A.Ny()!=A.Nx()) fatal("Not square:"<<A.Nx()<<"x"<<A.Ny()<<endl);
+    for(Int ix=0; ix<A.Nx(); ix++){
+	fun(A(ix, ix));
+    }
+}
+///Reduction operation for only diagonal elements
+template <typename T, typename F>
+void ApplyDiag(const Mat<T>& A, F fun){
+    if(A.Ny()!=A.Nx()) fatal("Not square:"<<A.Nx()<<"x"<<A.Ny()<<endl);
+    for(Int ix=0; ix<A.Nx(); ix++){
+	fun(A(ix, ix));
+    }
+}
+//Two arrays of same size
+///Modifying first array element by element
+template <typename T, typename F>
+void Apply2(Mat<T>& A, const Mat<T>& B, F fun){
+    if(!B) return; //no-op
+    else if(!A){
+	A=Mat<T>(B.Nx(), B.Ny());
+    }else{
+	CheckMatch(A,B);
+    }
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    fun(A(ix, iy), B(ix, iy));
+	}
+    }
+}
+///Reduction operation for all elements
+template <typename T, typename F>
+void Apply2(const Mat<T>& A, const Mat<T>& B, F fun){
+    CheckMatch(A,B);
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    fun(A(ix, iy), B(ix, iy));
+	}
+    }
+}
+
+//Three arrays of same size
+///Modifying element by element
+template <typename T, typename F>
+void Apply3(Mat<T>& A, const Mat<T>& B, const Mat<T>& C, F fun){
+    if(!B && !C) return; //no-op
+    else if(!A){
+	A=Mat<T>(B.Nx(), B.Ny());
+    }else{
+	CheckMatch(A,B);
+    }
+    CheckMatch(B,C);
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    fun(A(ix, iy), B(ix, iy),C(ix,iy));
+	}
+    }
+}
+
+///Reduction operation for all elements
+template <typename T, typename F>
+void Apply3(const Mat<T>& A, const Mat<T>& B, const Mat<T>& C, F fun){
+    CheckMatch(A,B);
+    CheckMatch(B,C);
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    fun(A(ix, iy), B(ix, iy), C(ix, iy));
+	}
+    }
+}
+
+///Modifying element by element
+template <typename T, typename F>
+void Apply(Cell<T>& A, F fun){
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    Apply(A(ix, iy), fun);
+	}
+    }
+}
+///Reduction operation for all elements
+template <typename T, typename F>
+void Apply(const Cell<T>& A, F fun){
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    Apply(A(ix, iy), fun);
+	}
+    }
+}
+///Modifying only diagonal elements
+template <typename T, typename F>
+void ApplyDiag(Cell<T>& A, F fun){
+    if(A.Ny()!=A.Nx()) fatal("Not square");
+    for(Int ix=0; ix<A.Nx(); ix++){
+	Apply(A(ix, ix), fun);
+    }
+}
+///Reduction operation for only diagonal elements
+template <typename T, typename F>
+void ApplyDiag(const Cell<T>& A, F fun){
+    if(A.Ny()!=A.Nx()) fatal("Not square");
+    for(Int ix=0; ix<A.Nx(); ix++){
+	Apply(A(ix, ix), fun);
+    }
+}
+//Two arrays of same size. Use different name for easy error diagnosis during compiling.
+///Modifying element by element
+template <typename T, typename F>
+void Apply2(Cell<T>& A, const Cell<T>& B, F fun){
+    if(!A){
+	A=Cell<T>(B.Nx(), B.Ny());
+    }else{
+	CheckMatch(A,B);
+    }
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    Apply2(A(ix, iy), B(ix, iy), fun);
+	}
+    }
+}
+
+///Reduction operation for all elements
+template <typename T, typename F>
+void Apply2(const Cell<T>& A, const Cell<T>& B, F fun){
+    CheckMatch(A,B);
+    for(Int iy=0; iy<A.Ny(); iy++){
+	for(Int ix=0; ix<A.Nx(); ix++){
+	    Apply2(A(ix, iy), B(ix, iy),  fun);
+	}
+    }
+}     
+  
+//Three arrays of same size
+///Modifying element by element
+template <typename T, typename F>
+void Apply3(Cell<T>& A, const Cell<T>& B, const Cell<T>& C, F fun){
+    if(!A){
+	A=Cell<T>(B.Nx(), B.Ny());
+    }else{
+	CheckMatch(A,B);
+    }
+    CheckMatch(B,C);
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    Apply3(A(ix, iy), B(ix, iy),C(ix,iy), fun);
+	}
+    }
+}
+
+///Reduction operation for all elements
+template <typename T, typename F>
+void Apply3(const Cell<T>& A, const Cell<T>& B, const Cell<T>& C, F fun){
+    CheckMatch(A,B);
+    CheckMatch(B,C);
+    for(Int iy=0; iy<B.Ny(); iy++){
+	for(Int ix=0; ix<B.Nx(); ix++){
+	    Apply3(A(ix, iy), B(ix, iy), C(ix, iy), fun);
+	}
+    }
+}
+
+///Set each element to alpha.
+template <typename T>
+void Set(T& A, typename num_type<T>::type alpha){
+    Apply(A, [=](typename num_type<T>::type &val){val=alpha;});
+}
+///Scale each element by alpha.
+template <typename T>
+void Scale(T& A, typename num_type<T>::type alpha){
+    typedef typename num_type<T>::type S;
+    if(alpha==(S)0){
+	Set(A, 0);
+    }else{
+	Apply(A, [=](S &val){val*=alpha;});
+    }
+}
+///Sum all the elements
+template <typename T>
+auto Sum(const T& A)->typename num_type<T>::type{
+    typedef typename num_type<T>::type S;
+    S res=0;
+    Apply(A, [&](S val){res+=val;});
+    return res;
+}
+///Sum after applying a function to each elements.
+template <typename T, typename F>
+auto Sum(const T& A, F fun)->typename num_type<T>::type{
+    typedef typename num_type<T>::type S;
+    S res=0;
+    Apply(A, [&](S val){res+=fun(val);});
+    return res;
+}
+///Sum all the elements after taking absolute value
+template <typename T>
+auto SumAbs(const T& A)->typename num_type<T>::type{
+    //return Sum(A, abs);
+    typedef typename num_type<T>::type S;
+    return Sum(A, [](S val){return fabs(val);});
+}				 
+///Sum all the diagonal elements
+template <typename T>
+auto SumDiag(const T& A)->typename num_type<T>::type{
+    typedef typename num_type<T>::type S;
+    S res=0;
+    ApplyDiag(A, [&](S val)->void{res+=val;});
+    return res;
+}
+
+///Sum after multiplying elements by elements.
+template <typename T>
+auto Dot(const T& A, const T& B)->typename num_type<T>::type{
+    typedef typename num_type<T>::type S;
+    S res=0;
+    Apply2(A, B, [&](S val, S val2){res+=val*val2;});
+    return res;
+}
+
+///Add a scalar to every diagonal element.
+template <typename T>
+void AddDiag(T& A, typename num_type<T>::type alpha){
+    typedef typename num_type<T>::type S;
+    ApplyDiag(A, [=](S& val1){val1+=alpha;});
+}
+
+///Add a scalar to every element.
+template <typename T>
+void Add(T& A, typename num_type<T>::type alpha){
+    typedef typename num_type<T>::type S;
+    Apply(A, [=](S& val1){val1+=alpha;});
+}
+
+///Component wise A=A*alpha+B*beta.
+template <typename T>
+void Add(T& A, typename num_type<T>::type alpha, const T& B, typename num_type<T>::type beta){
+    typedef typename num_type<T>::type S;
+    Apply2(A, B, [=](S& val1, S val2){val1=val1*alpha+val2*beta;});
+}
+
+///Component wise A=A*B.
+template <typename T>
+void Cwm(T& A, const T& B){
+    typedef typename num_type<T>::type S;
+    Apply2(A, B, [=](S& val1, S val2){val1=val1*val2;});
+}
+
+///Component wise A=A*B*beta.
+template <typename T>
+void Cwm(T& A, const T& B, typename num_type<T>::type beta){
+    typedef typename num_type<T>::type S;
+    Apply2(A, B, [=](S& val1, S val2){val1=val1*val2*beta;});
 }

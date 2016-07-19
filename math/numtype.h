@@ -59,6 +59,7 @@ using std::real;
 using std::conj;
 using std::isinf;
 using std::complex;
+using std::abs;
 typedef complex<double> dcomplex;
 typedef complex<float> fcomplex;
 #define COMPLEX(A,B) dcomplex(A,B)
