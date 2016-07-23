@@ -92,7 +92,6 @@ public:
  */
 class TwoDim{
 public:
-    uint32_t id;
 private:
     Int nx_;       /**<Number of rows (usually x) (fast changing)*/
     Int ny_;       /**<Number of columns (usually y) (slow changing)*/
@@ -108,8 +107,10 @@ public:
     ///Return the total number of elements
     Int N() const noexcept {return nx_*ny_;}
     ///Check whether the array is empty or not.
-    operator bool()const noexcept{
-	return nx_>0 && ny_>0;
+
+    ///Do not use operator bool(), which automatically convert array to Int.
+    bool operator !()const noexcept{
+	return nx_==0 || ny_==0;
     }
     void SetSize(Int nxi, Int nyi){
 	nx=nx_=nxi;
@@ -125,6 +126,49 @@ public:
     Int ny;
 };
 
+//Holding memory address and reference count.
+template <typename T>
+class RefP{
+    T  *p_=0;
+    Int *c_=0;
+    void Unref_(){
+	if(c_){
+	    if(!AtomicAdd(c_, -1)){
+		delete [] p_;
+		delete c_;
+	    }
+	}
+    }
+    void Ref_(){
+	if(c_){
+	    AtomicAdd(c_, 1);
+	}	
+    }
+public:
+    RefP(T *pi=0):p_(pi){
+	if(p_){
+	    c_=new Int(1);
+	}
+    }
+    ~RefP(){
+	Unref_();
+    }
+    RefP(const RefP& in):p_(in.p_),c_(in.c_){
+	Ref_();
+    }
+    RefP &operator=(const RefP& in){
+	if(c_){
+	    Unref_();
+	}
+	p_=in.p_;
+	c_=in.c_;
+	Ref_();
+	return *this;
+    }
+    Int Nref()const{
+	return c_?c_[0]:0;
+    }
+};
 /**
    Array is responsible for memory allocation, reference counting, and automatic memory deallocation.
 
@@ -137,92 +181,68 @@ public:
 template <typename T>
 class Array:public TwoDim{
 private:
-    T *p0_=0;     /**<Records the original pointer from memory allocation.*/
-    Int *nref_=0; /**<Count the reference.*/
+    T *p_=0;     /**<Records the original pointer from memory allocation.*/
+    RefP<T> nref_; /**<Count the reference and records the original pointer*/
     Int ldx_=0;     /**<Leading dimension of memory allocation*/
-    Int offset_=0;  /**<Pointer offset*/
-    mutable bool protect_=0;/**<Prevent overriding of p0_*/
+    //Int offset_=0;  /**<Pointer offset*/
+    mutable bool protect_=0;/**<Prevent overriding of p_*/
 public:
-    pcompat<T*> p;///Temporary, for drop in compatibility.
+    T* const &p;///Temporary, for drop in compatibility.
     struct fft_t *fft=0;
     struct mmap_t *mmap=0;
 protected:
     ///Decrease counter and free memory. Keep other information intact.
     void CheckProtect(Int check_ref){
-	if(protect_||(check_ref && nref_[0]!=1)){
+	if(protect_||(check_ref && Nref()>1)){
 	    fatal("Cannot reassign/resize protected array\n");
 	}
     }
-    void SetCompat();//Set compatibility flags.
- 
-    ///Free the memory, leaving the rest intact.
-    void DeinitMem(int reset) noexcept{
-	//Use AtomicAdd to avoid race condition.
-	if(nref_ && AtomicAdd(nref_, -1)==0){
-	    delete [] p0_; //must use this style as T may be a class.
-	    delete nref_;
-	    reset=1;
-	}
-	if(reset){
-	    p0_=0;
-	    nref_=0;
-	    ldx_=0;
-	    offset_=0;
-	    protect_=0;
-	    SetCompat();
-	}
-	//offset_=0;
-	//protect_=0;
-    }
-    ///Create Memory.
-    void InitMem(){
-	ldx_=Nx();
-	offset_=0;
+    ///Use pin or allocate memory 
+    void InitMem(T* pin){
 	protect_=0;
-	if(Nx()>0 && Ny()>0 && !p0_){
-	    p0_=(T*)new Dev<T>[Nx()*Ny()];
-	    nref_=new Int;
-	    nref_[0]=1;
+	if(Nx()>0 && Ny()>0){
+	    if(!pin){
+		ldx_=Nx();
+		p_=(T*)new Dev<T>[Nx()*Ny()];
+	    }else{
+		p_=pin;
+		warn(p_ << "foreign");
+	    }
 	}
-	SetCompat();
+	nref_=RefP<T>(p_);
     }
     ///Reference memory, with optional offset.
     void RefMem(const Array &in, Int offset=0){
 	//Prevent freeing memory during self assignment.
-	if(in.nref_) AtomicAdd(in.nref_, 1);
-	DeinitMem(0);
-	p0_=in.p0_;
+	RefP<T> tmp=in.nref_;
+	p_=in.p_+offset;
 	ldx_=in.ldx_;
-	nref_=in.nref_;
-	offset_=in.offset_+offset;
+	nref_=tmp;
 	protect_=0;
-	SetCompat();
+	fft=0;
+	mmap=0;
     }
-    public:
+public:
 
     ///Allocate memory and create reference counter [if size>0].
     explicit Array(Int nxi=0, int nyi=1, T*pin=0, int foreign=0)
-	:TwoDim(nxi, nyi),p0_(pin),ldx_(nx){
+	:TwoDim(nxi, nyi),p_(pin),ldx_(nx),p(p_){
 	if(foreign){
 	    if(!pin) fatal("When borrowing, p must not be NULL.\n");
 	}else{
-	    InitMem();
+	    InitMem(pin);
 	}
-	SetCompat();
     }
    
     ///Copy constructor that does reference counting.
     Array(const Array&in) noexcept
-	:TwoDim(in),p0_(in.p0_),nref_(in.nref_),ldx_(in.ldx_),offset_(in.offset_){
-	if(nref_) AtomicAdd(nref_, 1);
-	SetCompat();
+	:TwoDim(in),p_(in.p_),nref_(in.nref_),ldx_(in.ldx_),p(p_){
     }
     ///Copy assignment operator.
     Array &operator=(const Array &in){
 	CheckProtect(0);
 	RefMem(in);
 	SetSize(in);
-	SetCompat();
     	return *this;	
     }
   
@@ -259,53 +279,49 @@ protected:
 	CheckProtect(1);//This checks *nref_==1, which infers ldx_==nx_;
 	//If total number of elements remain the same. Just change ldx_ and Nx();
 	if(Nx()*Ny()!=nxi*nyi){
-	    T* pnew=(T*)new Dev<T>[nxi*nyi];
+	    Array<T> pnew(nxi, nyi);
 	    Int nymin=MIN(nyi, Ny());
-	    Int nxmin=MIN(nyi, Nx());
+	    Int nxmin=MIN(nxi, Nx());
 	    for(Int iy=0; iy<nymin; iy++){
 		for(Int ix=0; ix<nxmin; ix++){
-		    pnew[ix+iy*nxi]=(*this)(ix, iy);
+		    pnew(ix, iy)=(*this)(ix, iy);
 		}
 	    }
-	    delete [] p0_;
-	    p0_=pnew;
+	    *this=pnew;
+	}else{
+	    SetSize(nxi, nyi);
+	    ldx_=nxi;
 	}
-	SetSize(nxi, nyi);
-	ldx_=nxi;
 	return 1;
     }
     
     ///Reinitialize with same size
     void New(){
-	DeinitMem(1);
-	InitMem();
+	InitMem(0);
     }
     ///Reinit with different size
     void New(Int nxi, Int nyi){
-	DeinitMem(1);
 	SetSize(nxi, nyi);
-	ldx_=nxi;
-	InitMem();
+	InitMem(0);
     }
     void New(const TwoDim &size){New(size.Nx(), size.Ny());}
   
     ///Copy Content from one array to another.
     virtual ~Array(){
-	DeinitMem(1);
     }
     
 public:
     //Implicit pointer retrival (for backward compatibility).
-    operator const T*() const noexcept{ return p0_+offset_; }
-    operator T*() noexcept{ return p0_+offset_; }
+    operator const T*() const noexcept{ return p_; }
+    operator T*() noexcept{ return p_; }
     //Explicit pointer retrieval
-    T*P() noexcept {return (T*)p0_+offset_;}
-    const T*P() const noexcept {return (T*)p0_+offset_;}
+    T*P() noexcept {return (T*)p_;}
+    const T*P() const noexcept {return (T*)p_;}
     //Explicit pointer retrieval
     T *operator()() noexcept {return P();}
     const T *operator()() const noexcept {return P();}
     //Retrieves original pointer (calloc output)
-    const T*P0() const noexcept {return (T*)p0_;}
+    const T*P0() const noexcept {return (T*)p_;}
     
     //Boundary checking is performed in debug mode. use -DNDEBUG to disable
     //boundary checking. causes 3 times slow down
@@ -351,9 +367,27 @@ public:
     T &operator ()(Int ix, Int iy){
 	return const_cast<T&>(static_cast<const Array&>(*this)(ix, iy));
     }
-    
+    ///Insert n elements into a vector array. Resize it simultaneously if resize is true
+    void Insert(Int ix, Int nelem, bool resize=true){
+	if(!nelem) return;
+	if(resize){
+	    if(Ny()<=1){
+		Resize(Nx()+nelem, 1);
+	    }else if(Nx()<=1){
+		Resize(1, Ny()+nelem);
+	    }else{
+		error("Can only insert into a vector\n");
+	    }
+	}
+	for(Int i=N()-nelem-1; i>=ix; i--){
+	    p_[i+nelem]=p_[i];
+	}
+	for(Int i=ix; i<ix+nelem; i++){
+	    p_[i]=0;
+	}
+    }
     ///Returns the value of reference counter
-    Int Nref()const noexcept{ return nref_?nref_[0]:0; }
+    Int Nref()const noexcept{ return nref_.Nref(); }
     ///Return the leading dimension of underlying memory.
     Int Ldx() const noexcept {return ldx_;}
 
@@ -363,7 +397,7 @@ public:
     
     ///Use to check whether two arrays points to the same memory location and is the same dimension.
     bool operator==(const Array&B)const noexcept{
-	return (Nx()==B.Nx() && Ny()==B.Ny() && p0_==B.p0_);
+	return (Nx()==B.Nx() && Ny()==B.Ny() && p_==B.p_);
     }
     ///Inverse of ==.
     bool operator!=(const Array&B)const noexcept{
@@ -373,7 +407,7 @@ public:
 ///Display Data
 template <typename T>
 ostream& operator<<(ostream &os, const Array<T> &in){
-    os<<in.Nx()<<"x"<<in.Ny()<<":"<<endl;
+    os<<in.Nx()<<"x"<<in.Ny()<<": ("<<typeid(T).name()<<")"<<endl;
     for(Int ix=0; ix<MIN(10,in.Nx()); ix++){
 	for(Int iy=0; iy<MIN(10,in.Ny()); iy++){
 	    os<<in(ix,iy)<<" ";
@@ -381,11 +415,15 @@ ostream& operator<<(ostream &os, const Array<T> &in){
 	if(in.Ny()>10){
 	    os<<"...";
 	}
-	os<<endl;
+	if(in.Ny()){
+	    os<<endl;
+	}
     }
     if(in.Nx()>10){
 	os<<"..."<<endl;
     }
+    if(in.Nx())
+	os<<endl;
     return os;
 }
 
@@ -420,30 +458,41 @@ class Cell:public Array<T>{
 private:
     T m_;  /**<Stores continuous data of the underlying matrix for block matrix. May be empty*/
 public:
-    T *m=0;  //Temporary: for drop in replacement.
-    Array<T*> p; //Temporary: for drop in replacement.
     using Array<T>::P;
     using Array<T>::Ldx;
     using Array<T>::Nx;
     using Array<T>::Ny;
     using Array<T>::N;
-private:
-    void copy2p(){
-	if(Nx() && Ny()){
-	    p.New(Nx(), Ny());
-	    for(Int iy=0; iy<Ny(); iy++){
-		for(Int ix=0; ix<Nx(); ix++){
-		    p(ix, iy)=this->P(ix, iy);
-		}
-	    }
-	}
-	if(m_) m=&m_;
-    }
+
 public:
     ///Allocate an array
-    Cell(Int nxi=0, Int nyi=1):Array<T>(nxi, nyi){copy2p();}
+    Cell(Int nxi=0, Int nyi=1):Array<T>(nxi, nyi){}
     virtual ~Cell(){
     }
+       
+    ///Return the number of rows of each element.
+    IMat Nxs() const{
+	IMat size=IMat(Nx(), Ny());
+	for(Int iy=0; iy<Ny(); iy++){
+	    for(Int ix=0; ix<Nx(); ix++){
+		size(ix,iy)=(*this)(ix, iy).Nx();
+	    }
+	}
+	return size;
+    }
+
+    ///Return the number of cols of each element.
+    IMat Nys() const{
+	IMat size=IMat(Nx(), Ny());
+	for(Int iy=0; iy<Ny(); iy++){
+	    for(Int ix=0; ix<Nx(); ix++){
+		size(ix,iy)=(*this)(ix, iy).Ny();
+	    }
+	}
+	return size;
+    }
+    
+  
     ///Create a cell as a block matrix. Each sub-cell references the big
     ///array. Works with both vector and matrix All elements are of the same
     ///size.
@@ -455,12 +504,16 @@ public:
 		(*this)(ix, iy).Sub(m_, ix*nnx, nnx, iy*nny, nny);
 	    }
 	}
-	copy2p();
     }
     ///Create a cell as a block matrix. Each sub-cell references the big
     ///array. Works with both vector and matrix All sub-cells can be different
     ///size, but must match in shape like block matrix.
-    void NewDeep(Int nxi, Int nyi, const Array<Int> &nnx, const Array<Int> &nny){
+    void NewDeep(const Array<Int> &nnx, const Array<Int> &nny){
+	if(nnx.Nx()!=nny.Nx() || nny.Ny()!=nny.Ny()){
+	    fatal("nnx and nny mismatch");
+	}
+	const Int nxi=nnx.Nx();
+	const Int nyi=nny.Ny();
 	this->New(nxi, nyi);
 	Int totx=0, toty=0;
 	IMat nnx2(nxi,1), nny2(nyi,1);
@@ -493,9 +546,13 @@ public:
 	    }
 	    toty+=nny2[iy];
 	}
-	copy2p();
     }
     
+    ///Create another array with the same size
+    void NewDeep(const Cell &in){
+	NewDeep(in.Nxs(), in.Nys());
+    }
+
     //Use base class destructor, copy/move constructor and copy/move assignment operators.
     
     ///Return the continuous array.
@@ -507,54 +564,26 @@ public:
     T& M(){
 	return m_;
     }
-    
-    ///Return the number of rows of each element.
-    IMat Nxs() const{
-	IMat size=IMat(Nx(), Ny());
-	for(Int iy=0; iy<Ny(); iy++){
-	    for(Int ix=0; ix<Nx(); ix++){
-		size(ix,iy)=(*this)(ix, iy).Nx();
-	    }
-	}
-	return size;
-    }
-
-    ///Return the number of cols of each element.
-    IMat Nys() const{
-	IMat size=IMat(Nx(), Ny());
-	for(Int iy=0; iy<Ny(); iy++){
-	    for(Int ix=0; ix<Nx(); ix++){
-		size(ix,iy)=(*this)(ix, iy).Ny();
-	    }
-	}
-	return size;
-    }
-    
-    ///Create another array with the same size
-    void NewDeep(const Cell &in){
-	NewDeep(in.Nx(), in.Ny(), in.Nxs(), in.Nys());
-    }
-    
 };
+//Compresed Column Storage Sparse matrix. Always properly ordered.
 template <typename T>
 class Sparse:public TwoDim{
 private:
-    Array<Int> p_; ///<Column pointers (size ny+1)
-    Array<Int> i_; ///<Row indices, size nzmax
-    Array<T> x_;   ///<Numerical values, size nzmax
-    Int nzmax_=0;  ///Maximum number of elements.
+    Mat<Int> p_; ///<Column pointers (size ny+1)
+    Mat<Int> i_; ///<Row indices, size nzmax
+    Mat<T> x_;   ///<Numerical values, size nzmax
 protected:
     void SetCompat();//Set compatibility flags.
 public:
     explicit Sparse(Int nxi=0, Int nyi=0, Int nzm=0)
-	:TwoDim(nxi, nyi), p_(nyi+1, 1), i_(nzm, 1),x_(nzm, 1), nzmax_(nzm){
+	:TwoDim(nxi, nyi), p_(nyi+1, 1), i_(nzm, 1),x_(nzm, 1){
 	SetCompat();
     }
     explicit Sparse(Int nxi, Int nyi, Int nzm, Int *pi, Int *ii, T *xi)
-	:TwoDim(nxi,nyi), p_(nyi+1, 1, pi), i_(nzm, 1, ii), x_(nzm, 1, xi), nzmax_(nzm){
+	:TwoDim(nxi,nyi), p_(nyi+1, 1, pi), i_(nzm, 1, ii), x_(nzm, 1, xi){
 	SetCompat();
     }
-    Sparse(const Sparse &in)noexcept:TwoDim(in),p_(in.p_),i_(in.i_),x_(in.x_),nzmax_(in.nzmax_){
+    Sparse(const Sparse &in)noexcept:TwoDim(in),p_(in.p_),i_(in.i_),x_(in.x_){
 	SetCompat();
     }
 
@@ -564,14 +593,12 @@ public:
 	    p_=in.p_;
 	    i_=in.i_;
 	    x_=in.x_;
-	    nzmax_=in.nzmax_;
 	}
 	SetCompat();
     }
     ~Sparse(){};
     Int Resize(Int nzm){
 	int ans=i_.Resize(nzm,1) && x_.Resize(nzm,1);
-	nzmax_=nzm;
 	SetCompat();
 	return ans;
     }
@@ -579,13 +606,52 @@ public:
 	SetSize(nxi, nyi);
 	return p_.Resize(nyi+1,1) && Resize(nzm);
     }
-    Int *P() {return p_.P();}
-    const Int *P() const {return p_.P();}
-    Int *I() {return i_.P();}
-    const Int *I() const {return i_.P();}
-    T *X() {return x_.P();}
-    const T *X() const {return x_.P();}
-    Int Nzmax() {return nzmax_;}
+    Mat<Int>&P() {return p_;}
+    const Mat<Int>&P()const {return p_;}
+    Int P(Int ii) const {return p_(ii);}
+
+    Mat<Int>&I() {return i_;}
+    const Mat<Int>&I()const {return i_;}
+    Int I(Int ii) const {return i_(ii);}
+    
+    Mat<T>& X() {return x_;}
+    const Mat<T>& X()const {return x_;}
+    T X(Int ii) const {return x_(ii);}
+    
+    Int Nzmax() {return i_.N();}
+    //Slow. Only use for debugging.
+    T operator()(Int ix, Int iy) const{
+	assert(ix>=0 && ix<Nx() && iy>=0 && iy<Ny());
+	for(Int ic=P(iy); ic<P(iy+1); ic++){
+	    if(I(ic)==ix){
+		return X(ic);
+	    }
+	}
+	return 0;
+    }
+    //Slow. Only use for debugging.
+    void Set(Int ix, Int iy, T val) {
+	assert(ix>=0 && ix<Nx() && iy>=0 && iy<Ny());
+	Int found=0;
+	Int ic;
+	for(ic=p_(iy); ic<p_(iy+1); ic++){
+	    if(i_(ic)==ix){//Already exist.
+		x_(ic)=val;
+		found=1;
+		break;
+	    }
+	}
+	if(!found){
+	    i_.Insert(ic, 1, i_.Ny()<=p_(Ny()));
+	    x_.Insert(ic, 1, x_.Ny()<=p_(Ny()));
+	    for(Int ii=iy+1; ii<Ny()+1; ii++){
+		p_(ii)++;
+	    }
+	    i_(ic)=ix;
+	    x_(ic)=val;
+	}
+    }
+
 public: //For backward compatibility
     pcompat<Int*> p;
     pcompat<Int*> i;
@@ -594,6 +660,17 @@ public: //For backward compatibility
     
 };
 
+///Display Data
+template <typename T>
+ostream& operator<<(ostream &os, const Sparse<T> &in){
+    os<<in.Nx()<<"x"<<in.Ny()<<":"<<endl;
+    for(Int iy=0; iy<in.Ny(); iy++){
+	for(Int ic=in.P(iy); ic<in.P(iy+1); ic++){
+	    os<<"("<<in.I(ic)<<","<<iy<<"): "<<in.X(ic)<<endl;
+	}
+    }
+    return os;
+}
 
 ///trait class to itentify the underline numerical type. 
 template <typename T>
@@ -669,17 +746,11 @@ typedef Cell<CMat> CCell;
 typedef Cell<IMat> ICell;
 
 template <typename T>
-void Array<T>::SetCompat(){
-    p.SetP(p0_+offset_);
-    id=Magic<T>::magic;  
-}
-template <typename T>
 void Sparse<T>::SetCompat(){
     p.SetP(p_());
     i.SetP(i_());
     x.SetP(x_());
-    nzmax.SetP(nzmax_);
-    id=Magic<Sparse<T>>::magic;
+    nzmax.SetP(Nzmax());
 }
 
 template <typename T>

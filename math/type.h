@@ -82,12 +82,12 @@ public:
     double ftel=0;    /**<Effective focal length of the telescope*/
     double fexit=0;   /**<The distance between the exit pupil and the focus*/
     double fsurf=0;   /**<The distance between the tilted surface (M3) and the focus*/
-    public:
+public:
     rmap_t(){}
     rmap_t(Int nxi, Int nyi, Real *pi, Real dxi, Real dyi)
 	:dmat(nxi, nyi, pi, 0),ox(-nxi/2*dxi),oy(-nyi/2*dyi),dx(dxi),dy(dyi){}
     rmap_t(const rmap_t&in):dmat(in),ox(in.ox),oy(in.oy),dx(in.dx),dy(in.dy),txdeg(in.txdeg),tydeg(in.tydeg),ftel(in.ftel),fexit(in.fexit),fsurf(in.fsurf){}
-}rmap_t;
+};
 
 /**
    Store starting x,y for each col
@@ -103,36 +103,44 @@ struct locstatcol_t{
 
 */
 struct locstat_t{
-    locstatcol_t *cols; /**<Information about each column*/
+    Array<locstatcol_t> cols; /**<Information about each column*/
     double dx;          /**<Sampling of the grid along x*/
     double dy;          /**<Sampling of the grid along y*/
     double xmin;        /**<Minimum x*/
     double ymin;        /**<Minimum y*/
     long   ncol;        /**<Number of consecutive columns found*/
-    long   nx,ny;       /**<Size for embedding*/
+    long   nx;       /**<Size for embedding*/
+    long   ny;       /**<Size for embedding*/
 };
 /**
    Struct for coordinates like plocs, xloc, aloc etc.
 */
-class loc_t:dmat{
+class loc_t:protected dmat{
+public:
     pcompat<double*>locx;  /**<x coordinates of each point*/
     pcompat<double*>locy;  /**<y coordinates of each point*/
-    locstat_t *stat;/**<points to column statistics*/
-    map_t *map;    /**<point to the map used for identifying neihboring points.*/
-    long   nloc;   /**<number of points*/
+    pcompat<long>   nloc;   /**<number of points*/
+    locstat_t stat;/**<points to column statistics*/
+    map_t map;    /**<point to the map used for identifying neihboring points.*/
     double dx;     /**<Sampling along x*/
     double dy;     /**<Sampling along y*/
-    double ht;     /**<Conjugation height of the loc grid.*/
-    double iac;    /**<Inter-actuator coupling. >0: use cubic influence function for ray tracing*/
-    int npad;      /*padding when create map*/
-    int ref;       /**<Data is referenced*/
-}loc_t;
+    double ht=0;     /**<Conjugation height of the loc grid.*/
+    double iac=0;    /**<Inter-actuator coupling. >0: use cubic influence function for ray tracing*/
+    int npad=0;      /*padding when create map*/
+public:
+    loc_t(Int nloci, Real dxi, Real dyi):dmat(nloci, 2),dx(dxi),dy(dyi){
+	id=M_LOC64;
+	locx.SetP(P());
+	locy.SetP(P()+Nx());
+	nloc.SetP(Nx());
+    }
+};
 /**
    low left point of each subaperture.
    
    don't change the leading 5 elements. so that pts_t can be used as loc_t.
 */
-typedef struct pts_t{
+class pts_t:protected loc_t{
     uint32_t id;
     double *origx; /**<The x origin of each subaperture*/
     double *origy; /**<The y origin of each subaperture*/
@@ -151,7 +159,8 @@ typedef struct pts_t{
     int ny;        /**<number of rows per subaperture*/
     double dx;     /**<sampling of points in each subaperture*/
     double dy;     /**<sampling of points in each subaperture. dy=dx normally required.*/
-}pts_t;
+    
+};
 
 typedef Cell<cmat> ccell;
 typedef Cell<zmat> zcell;

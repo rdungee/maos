@@ -106,10 +106,13 @@ void maparrfree_do(map_t **map, int nmap){
 void rmapfree_do(rmap_t *map){
     dfree_do((dmat*)map, 0);
 }
+
 /**
    Create a loc with nloc elements.
 */
 loc_t *locnew(long nloc,double dx, double dy){
+    return new loc_t(nloc, dx, dy);
+    /*
     loc_t *loc=mycalloc(1,loc_t);
     loc->id=M_LOC64;
     loc->locx=mycalloc(nloc,double);
@@ -117,7 +120,7 @@ loc_t *locnew(long nloc,double dx, double dy){
     loc->nloc=nloc;
     loc->dx=dx;
     loc->dy=dy;
-    return loc;
+    return loc;*/
 }
 /**
    Create a pts with nsa, dsa, nx, dx
