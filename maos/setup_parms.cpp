@@ -318,9 +318,8 @@ static void readcfg_powfs(PARMS_T *parms){
     READ_POWFS_RELAX(int,phytypesim2);
     READ_POWFS_RELAX(dbl,r0);
     READ_POWFS_RELAX(dbl,L0);
-    READ_POWFS_RELAX(dbl,mtchcra);
     READ_POWFS_RELAX(int,mtchcpl);
-    READ_POWFS_RELAX(int,mtchscl);
+    READ_POWFS_RELAX(int,sigmatch);
     READ_POWFS_RELAX(int,mtchadp);
     READ_POWFS_RELAX(dbl,cogthres);
     READ_POWFS_RELAX(dbl,cogoff);
@@ -353,7 +352,7 @@ static void readcfg_powfs(PARMS_T *parms){
     READ_POWFS(int,dfrs);
     READ_POWFS(int,lo);
     READ_POWFS(int,pixpsa);
-    READ_POWFS_RELAX(dbl,mtchcr);
+    READ_POWFS_RELAX(int,mtchcr);
     READ_POWFS_RELAX(int,mtchstc);
     READ_POWFS_RELAX(int,phystep);
     READ_POWFS_RELAX(int,noisy);
@@ -1306,15 +1305,11 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	    if(powfsi->phytypesim2==-1){
 		powfsi->phytypesim2=powfsi->phytypesim;
 	    }
-	    if(powfsi->mtchcra==-1){
-		powfsi->mtchcra=powfsi->mtchcr;
-	    }
 	    int pixpsay=powfsi->pixpsa;
 	    int pixpsax=powfsi->radpix;
 	    if(!pixpsax) pixpsax=pixpsay;
-	    if(pixpsax*pixpsay<4 && (powfsi->mtchcr>0 || powfsi->mtchcra>0)){
-		powfsi->mtchcr=0;
-		powfsi->mtchcra=0;
+	    if(pixpsax*pixpsay<4){
+		powfsi->mtchcr=0;//cannot do constraint.
 	    }
 	    /*Convert pixtheta to radian and do senity check*/
 	    if(powfsi->pixtheta<0){//minus means ratio to lambda/dsa
@@ -1546,13 +1541,6 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	if(parms->sim.wfsalias){
 	    parms->powfs[ipowfs].noisy=0;
 	    parms->powfs[ipowfs].phystep=-1;
-	}
-	if(parms->powfs[ipowfs].mtchscl==-1){
-	    if(fabs(parms->powfs[ipowfs].sigscale-1)>EPS){
-		parms->powfs[ipowfs].mtchscl=1;
-	    }else{
-		parms->powfs[ipowfs].mtchscl=0;
-	    }
 	}
     }
     parms->hipowfs->nx=parms->nhipowfs;
@@ -2100,6 +2088,8 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
 	    parms->wfsr[ipowfs].hs=parms->powfs[ipowfs].hs;
 	    parms->wfsr[ipowfs].powfs=ipowfs;
 	    parms->powfs[ipowfs].nwfsr=1;
+	    parms->powfs[ipowfs].wfsr=lnew(1,1);
+	    parms->powfs[ipowfs].wfsr->p[0]=ipowfs;
 	}
 	parms->fit.nfit=1;
 	dresize(parms->fit.thetax, 1, 1);
@@ -2114,6 +2104,7 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
 	parms->nwfsr= parms->nwfs;
 	for(int ipowfs=0; ipowfs<parms->npowfs; ipowfs++){
 	    parms->powfs[ipowfs].nwfsr=parms->powfs[ipowfs].nwfs;
+	    parms->powfs[ipowfs].wfsr=lref(parms->powfs[ipowfs].wfs);
 	}
 	int nwfsfit=0;
 	for(int iwfs=0; iwfs<parms->nwfs; iwfs++){
@@ -2380,7 +2371,7 @@ static void setup_parms_postproc_misc(PARMS_T *parms, int override){
 	if(parms->sim.nseed<1){
 	    scheduler_finish(0);
 	    info2("There are no seed to run. Use -O to override. Exit\n");
-	    quit();
+	    sync(); exit(0);
 	}
     }
     info2("There are %d valid simulation seeds: ",parms->sim.nseed);
@@ -2542,10 +2533,9 @@ static void print_parms(const PARMS_T *parms){
 	info2("    %s in reconstruction. ", 
 	      parms->powfs[i].gtype_recon==0?"Gtilt":"Ztilt");
 	if(parms->powfs[i].phystep>-1){
-	    info2("Physical optics start at %d with '%s' %s",
+	    info2("Physical optics start at %d with '%s'",
 		  parms->powfs[i].phystep, 
-		  phytype[parms->powfs[i].phytypesim],
-		  parms->powfs[i].mtchscl?"scaled":"");
+		  phytype[parms->powfs[i].phytypesim]);
 	}else{
 	    info2("Geomtric optics uses %s ",
 		  parms->powfs[i].gtype_sim==0?"gtilt":"ztilt");

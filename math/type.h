@@ -255,11 +255,10 @@ INLINE void assert_2d(long ix, long iy, long nx, long ny){
 #else
 #define IND1(A,i) ((A)->p[(i)])
 #define IND2(A,ix,iy) ((A)->p[(ix)+(A)->nx*(iy)])
-//#define PIND1(A,i) ((A)->p+(i))
-//#define PIND2(A,ix,iy) ((A)->p+(ix)+(A)->nx*(iy))
 #endif
-#define PIND1(A,i) &IND1(A,i)
-#define PIND2(A,ix,iy) &IND2(A,ix,iy)
+#define PIND1(A,i) ((A)->p+(i))
+#define PIND2(A,ix,iy) ((A)->p+(ix)+(A)->nx*(iy))
+
 #define IND0(A) error("Invalid use. Use IND(A,i) or IND(A,ix,iy)\n");
 #define PIND0(A) error("Invalid use. Use PIND(A,i) or PIND(A,ix,iy)\n");
 #define IND_GET(_0,_1,_2,_3,NAME,...) NAME
