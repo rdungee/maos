@@ -21,6 +21,7 @@
 #include "sim_utils.h"
 #include "setup_surf.h"
 #include "setup_powfs.h"
+#include "pywfs.h"
 #if USE_CUDA
 #include "../cuda/gpu.h"
 #endif
@@ -37,7 +38,7 @@ static mapcell *genatm_do(SIM_T *simu){
     const ATM_CFG_T *atm=&parms->atm;
     TIC;
     mapcell *screens;
-    if(parms->dbg.atm == 0){
+    if(!parms->dbg.atm){
 	GENATM_T *gs=simu->atmcfg;
 	if(!gs){
 	    simu->atmcfg=mycalloc(1,GENATM_T);/*the data for generating screens. */
@@ -82,52 +83,46 @@ static mapcell *genatm_do(SIM_T *simu){
 	int nx=atm->nx;
 	int ny=atm->ny;
 	screens=mapcellnew(atm->nps, 1);
-	double hs=9000;
 	double dx=atm->dx;
-	for(int is=0; is<atm->nps; is++){
-	    screens->p[is]=mapnew(nx, ny, dx, dx, NULL);
-	    screens->p[is]->h=atm->ht->p[is];
+	int iratio=0;
+	if(parms->dbg.atm->nx>=atm->nps){
+	    iratio=1;
 	}
-	double strength=100e-9;
-	if(parms->dbg.atm>0){//represent a Fourier mode.
-	    double kk=2*M_PI/parms->dbg.atm*dx;
-	    long nn=MAX(nx, ny);
-	    dmat *sind=dnew(nn, 1);
-	    for(int ii=0; ii<nn; ii++){
-		sind->p[ii]=sin((ii-nn/2)*kk);
-	    }
-	    for(int iy=0; iy<ny; iy++){
-		for(int ix=0; ix<nx; ix++){
-		    IND(screens->p[0], ix, iy)=strength*2*sind->p[ix]*sind->p[iy];
+	loc_t *psloc=0;
+	const double strength=sqrt(1.0299*pow(parms->aper.d/atm->r0, 5./3.))*(0.5e-6/(2*M_PI));//PR WFE.
+	info("Strength=%g\n", strength);
+	for(int ips=0; ips<atm->nps; ips++){
+	    screens->p[ips]=mapnew(nx, ny, dx, dx, NULL);
+	    screens->p[ips]->h=atm->ht->p[ips];
+	    double dbgatm=parms->dbg.atm->p[ips*iratio];
+	    if(dbgatm>0){//zernike mode
+		if(!psloc){
+		    psloc=mksqloc_auto(nx, ny, atm->dx, atm->dx);
 		}
-	    }
-	    dfree(sind);
-	    for(int ips=1; ips<atm->nps; ips++){
-		dadd((dmat**)&screens->p[ips], 0, (dmat*)screens->p[ips], atm->wt->p[ips]);
-	    }
-	    dscale((dmat*)screens->p[0], atm->wt->p[0]);
-	}else if(parms->dbg.atm==-1){
-	    double scale=-pow(1.-screens->p[5]->h/hs,-2);
-	    double dx2=2./nx;
-	    //plate scale mode (focus) only
-	    for(int iy=0; iy<ny; iy++){
-		double *p0=screens->p[0]->p+iy*nx;
-		double *p1=screens->p[5]->p+iy*nx;
-		double y=(iy-ny/2)*dx2;
-		double yy=y*y;
-		for(int ix=0; ix<nx; ix++){
-		    double x=(ix-nx/2)*dx2;
-		    double xx=x*x;
-		    /*double xy=x*y; */
-		    /*p0[ix]=(iy-nx/2)*dx*strength; */
-		    /*p0[ix]=(x*0.2+y*0.1+xx*0.3-yy*0.7+xy*0.3)*strength; */
-		    p0[ix]=(xx+yy)*strength;
-		    p1[ix]=scale*(p0[ix]);
+		dmat *opd=zernike(psloc, nx*atm->dx, 0, 0, -dbgatm);
+		dmat *opd2=dref_reshape(opd, nx, ny);
+		dadd((dmat**)&screens->p[ips], 0, opd2, atm->wt->p[ips]*strength);
+		dfree(opd);
+		dfree(opd2);
+	    }else if(dbgatm<0){//Fourier mode;
+		double kk=2*M_PI/dbgatm*dx;
+		long nn=MAX(nx, ny);
+		dmat *sind=dnew(nn, 1);
+		for(int ii=0; ii<nn; ii++){
+		    sind->p[ii]=sin((ii-nn/2)*kk);
 		}
+		const double alpha=2*strength*atm->wt->p[ips];
+		for(int iy=0; iy<ny; iy++){
+		    for(int ix=0; ix<nx; ix++){
+			IND(screens->p[ips], ix, iy)=alpha*sind->p[ix]*sind->p[iy];
+		    }
+		}
+		dfree(sind);
+	    }else{
+		//empty screen.
 	    }
-	}else{
-	    error("dbg.atm has invalid value: %g\n", parms->dbg.atm);
-	} 
+	}
+	locfree(psloc);
     }
  
     return screens;
@@ -287,10 +282,11 @@ void setup_recon_HXW_predict(SIM_T *simu){
     for(int iwfs=0; iwfs<nwfs; iwfs++){
 	int ipowfs = parms->wfsr[iwfs].powfs;
 	if(!parms->powfs[ipowfs].skip){/*for tomography */
-	    double  hs = parms->wfs[iwfs].hs;
+	    const double hs = parms->wfs[iwfs].hs;
+	    const double hc=parms->powfs[ipowfs].hc;
 	    for(int ips=0; ips<npsr; ips++){
 		dspfree(IND(HXWtomo,iwfs,ips));
-		double  ht = recon->ht->p[ips];
+		double  ht = recon->ht->p[ips]-hc;
 		double  scale=1. - ht/hs;
 		double  displace[2];
 		displace[0]=parms->wfsr[iwfs].thetax*ht;
@@ -742,7 +738,7 @@ static void init_simu_wfs(SIM_T *simu){
 		}		
 	    }else{
 		simu->ints->p[iwfs]=dcellnew(1,1);
-		simu->ints->p[iwfs]->p[0]=dnew(powfs[ipowfs].saloc->nloc,4);
+		simu->ints->p[iwfs]->p[0]=dnew(powfs[ipowfs].saloc->nloc,powfs[ipowfs].pywfs->nside);
 	    }
 	}
 	if(parms->powfs[ipowfs].phystep!=0 || parms->save.gradgeom->p[iwfs] || parms->powfs[ipowfs].pistatout){
@@ -920,8 +916,9 @@ static void init_simu_wfs(SIM_T *simu){
 	const int nwfsp=parms->powfs[ipowfs].nwfs;
 	const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
 	const double hs=parms->wfs[iwfs].hs;
+	const double hc=parms->powfs[ipowfs].hc;
 	for(int ips=0; ips<parms->atm.nps; ips++){
-	    const double ht=parms->atm.ht->p[ips];
+	    const double ht=parms->atm.ht->p[ips]-hc;
 	    if(ht>hs){
 		error("Layer is above guide star\n");
 	    }
@@ -949,7 +946,7 @@ static void init_simu_wfs(SIM_T *simu){
 	    thread_prep(simu->wfs_prop_atm[iwfs+nwfs*ips],0,tot,nthread,prop,data);
 	}
 	for(int idm=0; idm<parms->ndm; idm++){
-	    const double ht = parms->dm[idm].ht+parms->dm[idm].vmisreg;
+	    const double ht = parms->dm[idm].ht+parms->dm[idm].vmisreg-hc;
 	    PROPDATA_T *data=&simu->wfs_propdata_dm[iwfs+nwfs*idm];
 	    int tot;
 	    data->displacex0=ht*parms->wfs[iwfs].thetax;
@@ -1350,7 +1347,7 @@ SIM_T* init_simu(const PARMS_T *parms,POWFS_T *powfs,
     if(parms->gpu.evl){
 	thread_prep(simu->perf_evl_pre, 0, nevl, nevl, gpu_perfevl_queue, simu);
 	simu->perf_evl_post=mycalloc(nevl,thread_t);
-	thread_prep(simu->perf_evl_post, 0, nevl, nevl, gpu_perfevl_sync, simu);
+	thread_prep(simu->perf_evl_post, 0, nevl, 1, gpu_perfevl_sync, simu);
     }else
 #endif
     {
@@ -1364,7 +1361,7 @@ SIM_T* init_simu(const PARMS_T *parms,POWFS_T *powfs,
     {
 	thread_prep(simu->wfs_grad_pre, 0, nwfs, nwfs, wfsgrad_iwfs, simu);
     }
-    thread_prep(simu->wfs_grad_post, 0, nwfs, nwfs, wfsgrad_post, simu);
+    thread_prep(simu->wfs_grad_post, 0, nwfs, 1, wfsgrad_post, simu);
     
     if(!parms->sim.evlol){
 	init_simu_dm(simu);
@@ -1728,11 +1725,7 @@ void save_skyc(POWFS_T *powfs, RECON_T *recon, const PARMS_T *parms){
     fprintf(fp,"maos.r0z=%g\n",parms->atm.r0z);
     fprintf(fp,"maos.dt=%g\n",parms->sim.dt);
     fprintf(fp,"maos.zadeg=%g\n",zadeg);
-    if(parms->ndm==2){
-	fprintf(fp,"maos.hc=%g\n",parms->dm[1].ht);
-    }else{
-	error("Invalid");
-    }
+    fprintf(fp,"maos.hc=%g\n",parms->dm[parms->ndm-1].ht);
     fprintf(fp,"maos.hs=%g\n",recon->ngsmod->hs);
     fprintf(fp,"maos.nmod=%d\n",recon->ngsmod->nmod);
     fprintf(fp,"maos.D=%g\n",parms->aper.d);
@@ -1862,6 +1855,9 @@ void save_skyc(POWFS_T *powfs, RECON_T *recon, const PARMS_T *parms){
     fprintf(fp,"maos.ahstfocus=%d\n", parms->sim.ahstfocus);
     fprintf(fp,"maos.mffocus=%d\n", parms->sim.mffocus);
     fprintf(fp,"maos.fnrange=%s\n", parms->powfs[parms->hipowfs->p[0]].llt->fnrange);
+    fprintf(fp,"maos.indps=%d", recon->ngsmod->indps);
+    fprintf(fp,"maos.indastig=%d", recon->ngsmod->indastig);
+    fprintf(fp,"maos.indfocus=%d", recon->ngsmod->indfocus);
     fclose(fp);
     for(int jpowfs=0; jpowfs<npowfs_ngs; jpowfs++){
 	int ipowfs=powfs_ngs[jpowfs];

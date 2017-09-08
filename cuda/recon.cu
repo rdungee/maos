@@ -250,7 +250,7 @@ void curecon_t::reset_runtime(){
     dm_evl.zero(0);
 }
     
-#define DBG_RECON 1
+#define DBG_RECON 0
 Real curecon_t::tomo(dcell **_opdr, dcell **_gngsmvst, 
 		     const dcell *_gradin){
     cp2gpu(gradin, _gradin);
@@ -266,18 +266,22 @@ Real curecon_t::tomo(dcell **_opdr, dcell **_gngsmvst,
 	Real omax=curmax(opdr.M(), cgstream);
 	static Real omax_last=INFINITY;
 	if(omax>omax_last*5 || cgres>cgres_last*5){
-	    info("tomo cgres=%g cgres_last=%g. omax=%g, omax_last=%g\n", cgres, cgres_last, omax, omax_last);
+	    info("tomo[%d]: cgres=%g cgres_last=%g. omax=%g, omax_last=%g\n", isim, cgres, cgres_last, omax, omax_last);
 	    if(!disable_save){
 		writebin(_gradin, "tomo_gradin_%d", isim);
-		cuwrite(opdr_save, "tomo_opdrlast_%d", isim);
 		cuwrite(opdr, "tomo_opdr_%d", isim);
 		cuwrite(tomo_rhs, "tomo_rhs_%d", isim);
 	    }
+
 	    curcellcp(opdr, opdr_save, cgstream);
 	    Real newres=RL->solve(opdr, tomo_rhs, cgstream);
-	    info2("tomo[%d]: omax=%g, oldres=%g. newres=%g\n", 
-		  isim, omax, cgres, newres);
+	    Real newomax=curmax(opdr.M(), cgstream);
+	    info2("tomo redo: cgres=%g, cgres_last=%g. omax=%g\n", newres, cgres, newomax);
+	    if(newres*2>=cgres){
+		warning("Redo tomography does not help\n");
+	    }
 	    if(!disable_save){
+		cuwrite(opdr_save, "tomo_opdrlast_%d", isim);
 		cuwrite(opdr, "tomo_opdrredo_%d", isim);
 	    }
 	    cgres=newres;
@@ -310,20 +314,25 @@ Real curecon_t::fit(dcell **_dmfit, dcell *_opdr){
     static Real cgres_last=INFINITY;
     if(cgres>MAX(cgres_last*5, EPS)){
 	int isim=grid->reconisim;
-	info("fit cgres=%g, cgres_last=%g\n", cgres, cgres_last);
+	info("fit[%d]: cgres=%g, cgres_last=%g\n", isim, cgres, cgres_last);
 	if(!disable_save){
 	    cuwrite(opdr, "fit_opdr_%d", isim);
-	    cuwrite(dmfit_save, "fit_dmfitlast_%d", isim);
 	    cuwrite(dmfit, "fit_dmfit_%d", isim);
 	    cuwrite(fit_rhs, "fit_rhs_%d", isim);
 	}
+
 	curcellcp(dmfit, dmfit_save, cgstream);
 	Real newres=FL->solve(dmfit, fit_rhs, cgstream);
-	info2("fit[%d]: oldres=%g. newres=%g\n", isim, cgres, newres);
+	info2("fit redo: oldres=%g. newres=%g\n", cgres, newres);
+	if(newres*2>=cgres){
+	    warning("Redo fitting does not help\n");
+	}
 	if(!disable_save){
+	    cuwrite(dmfit_save, "fit_dmfitlast_%d", isim);
 	    cuwrite(dmfit, "fit_dmfitredo_%d", isim);
 	}
 	cgres=newres;
+
     }
     cgres_last=cgres;
 #endif
@@ -483,7 +492,7 @@ void curecon_t::fit_test(SIM_T *simu){	//Debugging.
 	writebin(lc, "CPU_FitSolve%d", i);
     }
     dcell *lhs=NULL;
-    if(!simu->parms->fit.square){
+    if(recon->FR.M){
 	muv_trans(&lhs, &recon->FR, rhsc, 1);
 	writebin(lhs, "CPU_FitRt");
     }
@@ -599,7 +608,7 @@ void gpu_recon_reset(const PARMS_T *parms){//reset warm restart.
 	CUDA_SYNC_DEVICE;
     }
 }
-void gpu_tomo(SIM_T *simu){
+void gpu_tomo(SIM_T *simu, dcell *gradin){
     gpu_set(cudata_t::recongpu);
     curecon_t *curecon=cudata->recon;
     curecon->grid->isim=simu->isim;
@@ -615,12 +624,11 @@ void gpu_tomo(SIM_T *simu){
 		      || (recon->moao && !parms->gpu.moao)
 		      || parms->evl.tomo);
 	simu->cgres->p[0]->p[simu->reconisim]=
-	    curecon->tomo(copy2cpu?&simu->opdr:NULL, &simu->gngsmvst, 
-			  parms->recon.psol?simu->gradlastol:simu->gradlastcl);
+	    curecon->tomo(copy2cpu?&simu->opdr:NULL, &simu->gngsmvst, gradin);
     }
 }
 
-void gpu_fit(SIM_T *simu){
+void gpu_fit(dcell **dmout, SIM_T *simu){
     gpu_set(cudata_t::recongpu);
     curecon_t *curecon=cudata->recon;
     curecon->grid->isim=simu->isim;
@@ -630,7 +638,7 @@ void gpu_fit(SIM_T *simu){
 	curecon->fit_test(simu);
     }else{
 	simu->cgres->p[1]->p[simu->reconisim]=
-	    curecon->fit(&simu->dmfit, parms->gpu.tomo?NULL:simu->opdr);
+	    curecon->fit(dmout, parms->gpu.tomo?NULL:simu->opdr);
     }
     //Don't free opdr. Needed for warm restart in tomo.
 }

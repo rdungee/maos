@@ -88,11 +88,6 @@ setup_recon_gloc(RECON_T *recon, const PARMS_T *parms, const APER_T *aper){
 	recon->gamp->p[ipowfs]=mkamp(recon->gloc->p[ipowfs], aper->ampground, 
 				     0,0, parms->aper.d, parms->aper.din);
 	loc_reduce(recon->gloc->p[ipowfs], recon->gamp->p[ipowfs], EPS, 1, NULL);
-	
-	if(parms->dbg.pupmask && parms->powfs[ipowfs].lo){//for NGS WFS only.
-	    int iwfs=parms->powfs[ipowfs].wfs->p[0];
-	    wfspupmask(parms, recon->gloc->p[ipowfs], recon->gamp->p[ipowfs], iwfs);
-	}
     }
 }
 /**
@@ -295,7 +290,7 @@ setup_recon_aloc(RECON_T *recon, const PARMS_T *parms){
 	    double guard=parms->dm[idm].guard*MAX(dx,dy);
 	    map_t *map;
 	    if(parms->dbg.dmfullfov && !parms->fit.square){//DM covers full fov
-		double D=(parms->sim.fov*ht+parms->aper.d+guard*2);
+		double D=(parms->sim.fov*fabs(ht)+parms->aper.d+guard*2);
 		long nx=D/dx+1;
 		long ny=D/dy+1;
 		map=mapnew(nx, ny, dx, dy, 0);
@@ -433,12 +428,13 @@ setup_recon_HXW(RECON_T *recon, const PARMS_T *parms){
 		continue;
 	    }
 	    const double  hs = parms->wfs[iwfs].hs;
+	    const double  hc = parms->powfs[ipowfs].hc;
 	    loc_t *loc=recon->ploc;
 	    if(recon->ploc_tel && recon->ploc_tel->p[iwfs]){
 		loc=recon->ploc_tel->p[iwfs];
 	    }
 	    for(int ips=0; ips<npsr; ips++){
-		const double  ht = recon->ht->p[ips];
+		const double  ht = recon->ht->p[ips]-hc;
 		const double  scale=1. - ht/hs;
 		const double dispx=parms->wfsr[iwfs].thetax*ht;
 		const double dispy=parms->wfsr[iwfs].thetay*ht;
@@ -623,7 +619,7 @@ setup_recon_GA(RECON_T *recon, const PARMS_T *parms, const POWFS_T *powfs){
 	    int nloc=recon->aloc->p[idm]->nloc;
 	    for(int iwfs=0; iwfs<nwfs; iwfs++){
 		int ipowfs = parms->wfsr[iwfs].powfs;
-		if(parms->sim.skysim && parms->powfs[ipowfs].lo){
+		if(parms->tomo.ahst_idealngs && parms->powfs[ipowfs].lo){
 		    continue;
 		}
 		int nsa=powfs[ipowfs].saloc->nloc;
@@ -673,16 +669,17 @@ setup_recon_GA(RECON_T *recon, const PARMS_T *parms, const POWFS_T *powfs){
 	}
 	for(int iwfs=0; iwfs<nwfs; iwfs++){
 	    int ipowfs = parms->wfsr[iwfs].powfs;
-	    if(parms->sim.skysim && parms->powfs[ipowfs].lo){
+	    if(parms->tomo.ahst_idealngs && parms->powfs[ipowfs].lo){
 		continue;
 	    }
 	    if(parms->powfs[ipowfs].skip==2){//no need for TWFS
 		continue;
 	    }
-	    double  hs = parms->wfs[iwfs].hs;
+	    const double  hs = parms->wfs[iwfs].hs;
+	    const double hc=parms->powfs[ipowfs].hc;
 	    for(int idm=0; idm<ndm; idm++){
-		double  ht = parms->dm[idm].ht;
-		double  scale=1. - ht/hs;
+		const double  ht = parms->dm[idm].ht-hc;
+		const double  scale=1. - ht/hs;
 		double  dispx=0, dispy=0;
 		if(!parms->recon.glao){
 		    dispx=parms->wfsr[iwfs].thetax*ht;
@@ -691,7 +688,7 @@ setup_recon_GA(RECON_T *recon, const PARMS_T *parms, const POWFS_T *powfs){
 		if(parms->powfs[ipowfs].type==1){//PWFS
 		    if(!parms->powfs[ipowfs].lo){
 			dmat *opdadd=0;
-			if(!parms->recon.glao){
+			if(!parms->recon.glao && powfs[ipowfs].opdadd){
 			    int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
 			    opdadd=powfs[ipowfs].opdadd->p[wfsind];
 			}
@@ -955,43 +952,20 @@ fit_prep_lrt(RECON_T *recon, const PARMS_T *parms){
     }
     if(lrt_tt){
 	double factor=0;
-	if(lrt_tt==1){
-	    info2("Adding TT cr on upper DMs to fit matrix.\n");
-	    factor=scl*2./parms->aper.d;
-	    for(int idm=1; idm<ndm; idm++){
-		int nloc=recon->aloc->p[idm]->nloc;
-		double *p=recon->fitNW->p[idm]->p+(inw+(idm-1)*2)*nloc;
-		double *p2x=p;
-		double *p2y=p+nloc;
-		const double *cpl=actcpl->p[idm]->p;
-		for(int iloc=0; iloc<nloc; iloc++){
-		    if(cpl[iloc]>0.1){
-			p2x[iloc]=recon->aloc->p[idm]->locx[iloc]*factor;/*x tilt */
-			p2y[iloc]=recon->aloc->p[idm]->locy[iloc]*factor;/*y tilt */
-		    }
+	info2("Adding TT cr on upper DMs to fit matrix.\n");
+	factor=scl*2./parms->aper.d;
+	for(int idm=1; idm<ndm; idm++){
+	    int nloc=recon->aloc->p[idm]->nloc;
+	    double *p=recon->fitNW->p[idm]->p+(inw+(idm-1)*2)*nloc;
+	    double *p2x=p;
+	    double *p2y=p+nloc;
+	    const double *cpl=actcpl->p[idm]->p;
+	    for(int iloc=0; iloc<nloc; iloc++){
+		if(cpl[iloc]>0.1){
+		    p2x[iloc]=recon->aloc->p[idm]->locx[iloc]*factor;/*x tilt */
+		    p2y[iloc]=recon->aloc->p[idm]->locy[iloc]*factor;/*y tilt */
 		}
 	    }
-	}else if(lrt_tt==2){/*Canceling TT. only valid for 2 DMs */
-	    warning("Adding Canceling TT cr to fit matrix. Deprecated\n");
-	    if(ndm!=2){
-		error("Only ndm=2 case is implemented\n");
-	    }
-	    for(int idm=0; idm<ndm; idm++){
-		int nloc=recon->aloc->p[idm]->nloc;
-		double *p=recon->fitNW->p[idm]->p+inw*nloc;
-		if(idm==0) factor=scl*2/parms->aper.d;
-		else if(idm==1) factor=-scl*2./parms->aper.d;
-		double *p2x=p;
-		double *p2y=p+nloc;
-		const double *cpl=actcpl->p[idm]->p;
-		for(int iloc=0; iloc<nloc; iloc++){
-		    if(cpl[iloc]>0.1){
-			p2x[iloc]=recon->aloc->p[idm]->locx[iloc]*factor;/*x tilt */
-			p2y[iloc]=recon->aloc->p[idm]->locy[iloc]*factor;/*y tilt */
-		    }
-		}
-	    }
-
 	}
 	inw+=2*(ndm-1);
     }
@@ -1045,7 +1019,7 @@ setup_recon_TT(RECON_T *recon, const PARMS_T *parms, const POWFS_T *powfs){
 		    TTy[isa]=1;
 		}
 	    }else if(parms->powfs[ipowfs].type==1){//PYWFS
-		TT=pywfs_tt(powfs[ipowfs].pywfs);
+		TT=powfs[ipowfs].pywfs->GTT; //pywfs_tt(powfs[ipowfs].pywfs);
 	    }else{
 		error("Invalid powfs.type\n");
 	    }

@@ -33,7 +33,7 @@ typedef struct APER_T{
     loccell *locs_dm;    /**<Distorted locs when mapped onto DM*/
     dmat *amp;           /**<amplitude map defined on locs, if exists. sum to 1. for
 			    performance evaluation*/
-    dmat *amp1;          /**<amplitude map defined o locs, maximum is 1. use for plotting.*/
+    dmat *amp1;          /**<amplitude map defined on locs, maximum is 1. use for plotting.*/
     map_t *ampground;    /**<The input amplitude map on ground level read from file.*/
     dmat *mod;           /**<modal columne vectors if parms->evl.nmax>1*/
     dmat *mcc;           /*piston/tip/tilt mode cross-coupling for evaluations.*/
@@ -70,7 +70,8 @@ typedef struct INTSTAT_T{
     dcell *i0;          /**<short exposure image. nsa x nllt*/
     dcell *gx;          /**<gradient of i0 along x*/
     dcell *gy;          /**<gradient of i0 along y*/
-    dmat *i0sum;        /**<sum of i0*/
+    dmat *i0sum;        /**<sum of i0 for each subaperture*/
+    dmat *i0sumsum;     /**<sum of i0sum for all subapertures*/
     dcell *mtche;       /**<mtched filter operator along x/y, even if radpix=1*/
     int notf;           /**<number of otf; 1 unless there is ncpa.*/
     int nsepsf;         /**<number of sepsf; usually 1.*/
@@ -84,7 +85,8 @@ typedef struct POWFS_T{
     /*Parameters about subapertures. */
     loc_t *saloc;       /**<lower left corner of the subaperture*/
     pts_t *pts;         /**<records lower left-most point of each sa in a regular grid.*/
-    dmat *saa;          /**<Subaperture area*/
+    dmat *saa;          /**<Subaperture normalized area*/
+    double saasum;      /**<sum of saa*/
     loc_t *loc;         /**<concatenated points for all subapertures.*/
     dmat *amp;          /**<amplitude map defined on loc, max at 1.*/
     loccell *loc_dm;     /**<distorted loc mapped onto DM. size: (nwfs, ndm)*/
@@ -155,9 +157,12 @@ typedef struct NGSMOD_T{
     dcell *Rngs;    /**<NGS reconstructor from NGS grad to NGS mod vec. pinv of GM*/
     dcell *Pngs;    /**<Project DM command to NGS modes */
     dcell *Modes;   /**<DM vector for the modes*/
-    dspcell *Wa;     /**<Aperture weighting. Ha'*W*Ha. It has zeros in diagonal. Add tikholnov*/
+    dspcell *Wa;    /**<Aperture weighting. Ha'*W*Ha. It has zeros in diagonal. Add tikholnov*/
     int nmod;       /**<nmod: 5 for 2 dm, 2 for 1 dm.*/
     int ahstfocus;  /**<records parms->sim.ahstfocus*/
+    int indfocus;  /**<Include focus in NGS controlled modes. Records the index*/
+    int indps;     /**<Include plate scale in NGS controlled modes. Records the index*/
+    int indastig;  /**<Include astigmatism mode in NGS controlled modes. Records the index*/
 }NGSMOD_T;
 /**
    contains data for Fourier Domain Preconditioner.
@@ -247,7 +252,7 @@ typedef struct RECON_T{
 
     loccell *aloc;      /**<actuator grid*/
     mapcell *amap;      /**<square grid of actuators*/
-    mapcell *acmap;     /**For caching DM to intermediate plane*/
+    mapcell *acmap;     /**For caching DM to intermediate plane during fitting (GPU)*/
     lmat *anx;        /**<Size of each amap*/
     lmat *any;        /**<Size of each amap*/
     lmat *anloc;      /**<Size of each aloc*/
@@ -509,8 +514,7 @@ typedef struct SIM_T{
 			  system, not in reconstruction since it is unknown.*/
     dmat *ttmreal;
     mapcell *dmrealsq;  /**<dmreal embeded into an square map, zero padded.*/
-    dcell *dmproj;     /**<only used when sim.wfsalias=1. The projection of atm
-			  onto DM space directly.*/
+    dcell *dmproj;     /**<The projection of atm onto DM space directly.*/
     mapcell *dmprojsq;  /**<dmproj embeded into square map, zero padded.*/
     dccell *wfspsol;    /**<time averaged dm command (dtrat>1) for psol grad*/
     dcell *dmhist;     /**<histogram of dm commands. if dbg.dmhist is 1.*/
@@ -574,6 +578,9 @@ typedef struct SIM_T{
     dcell *olmp;       /**<OL mode coefficient per direction.*/
     dmat *ole;         /**<field averaged OL error*/
     dmat *cle;         /**<field averaged CL error*/
+
+    //Temporary
+    dmat *ngsmodlpf;  /**<For removal low frequency component of ngsmod from LGS recon*/
 
     /*MOAO*/
     dcell *dm_wfs;   /**<moao DM command computed for wfs*/

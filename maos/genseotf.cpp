@@ -65,9 +65,6 @@ static void genseotf_do(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 		info("powfs[%d].opdbias[%d] is different from powfs[%d].opdbias[0] by %g.\n", 
 		     ipowfs, iwfs, ipowfs, diff);
 		different=1;
-	    }else{
-		info("powfs[%d].opdbias[%d] is same as powfs[%d].opdbias[0]\n", 
-		     ipowfs, iwfs, ipowfs);
 	    }
 	}
 	if(different){
@@ -119,10 +116,9 @@ void genseotf(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
     }else{
 	key=dhash(powfs[ipowfs].amp, key);
     }
-    info("powfs %d: ncpa_method=%d, opdbias=%p\n",
+    info2("powfs %d: ncpa_method=%d, opdbias=%p\n",
 	 ipowfs, parms->powfs[ipowfs].ncpa_method, powfs[ipowfs].opdbias);
     if(powfs[ipowfs].opdbias && parms->powfs[ipowfs].ncpa_method==2){
-	info("Puting opdbias to key\n");
 	for(int iwfs=0; iwfs<parms->powfs[ipowfs].nwfs; iwfs++){
 	    key=dhash(powfs[ipowfs].opdbias->p[iwfs],key);
 	}
@@ -134,14 +130,17 @@ void genseotf(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
     }
     char fnotf[PATH_MAX];
     char fnlock[PATH_MAX];
-    snprintf(fnotf,PATH_MAX,"%s/.aos/cache/",HOME);
-    if(!exist(fnotf)) 
+    snprintf(fnotf,PATH_MAX,"%s/SEOTF/",CACHE);
+    if(!exist(fnotf)) {
 	mymkdir("%s",fnotf);
+    }else{
+	remove_file_older(fnotf, 365*24*3600);
+    }
     long nsa=powfs[ipowfs].saloc->nloc;
-    snprintf(fnotf,PATH_MAX,"%s/.aos/cache/%s_D%g_%g_"
+    snprintf(fnotf,PATH_MAX,"%s/SEOTF/%s_D%g_%g_"
 	     "r0_%g_L0%g_dsa%g_nsa%ld_dx1_%g_"
 	     "nwvl%d_%g_embfac%d_ncompx%d_%dx%d_v2",
-	     HOME, fnprefix,
+	     CACHE, fnprefix,
 	     parms->aper.d,parms->aper.din, 
 	     parms->powfs[ipowfs].r0, parms->powfs[ipowfs].L0, 
 	     powfs[ipowfs].pts->dsa,nsa,
@@ -222,10 +221,16 @@ void genselotf(const PARMS_T *parms,POWFS_T *powfs,int ipowfs){
     }
     snprintf(fnprefix,80,"SELOTF_%0x",key);
     char fnlotf[PATH_MAX];
-    snprintf(fnlotf,PATH_MAX,"%s/.aos/cache/%s_"
+    snprintf(fnlotf,PATH_MAX,"%s/SELOTF/", CACHE);
+    if(!exist(fnlotf)){
+	mymkdir("%s",fnlotf);
+    }else{
+	remove_file_older(fnlotf, 365*24*3600);
+    }
+    snprintf(fnlotf,PATH_MAX,"%s/SELOTF/%s_"
 	     "r0_%g_L0%g_lltd%g_dx1_%g_W%g_"
 	     "nwvl%d_%g_embfac%d_v2", 
-	     HOME, fnprefix,
+	     CACHE, fnprefix,
 	     parms->powfs[ipowfs].r0, parms->powfs[ipowfs].L0, 
 	     powfs[ipowfs].llt->pts->dsa,
 	     1./powfs[ipowfs].llt->pts->dx,
@@ -254,19 +259,23 @@ void genselotf(const PARMS_T *parms,POWFS_T *powfs,int ipowfs){
 	    if(!intstat->lotf || !intstat->lotf->nx) error("Invalid lotf\n");
 	}
     }
-    if(parms->save.setup){//Save PSF is uplink LLT.
+    if(parms->save.setup){//Save uplink PSF.
 	int nwvl=intstat->lotf->nx;
 	ccell*  lotf=intstat->lotf/*PCELL*/;
 	int nlpsf=powfs[ipowfs].llt->pts->nx*parms->powfs[ipowfs].embfac;
 	cmat *psfhat=cnew(nlpsf, nlpsf);
 	dmat *psf=dnew(nlpsf, nlpsf);
+	char header[64];
 	zfarr *lltpsfsave=NULL;
 	lltpsfsave=zfarr_init(nwvl, intstat->lotf->ny, "powfs%d_llt_psf", ipowfs);
-	for(int illt=0; illt<intstat->lotf->ny; illt++){
-	    for(int iwvl=0; iwvl<nwvl; iwvl++){
-		const double dx=powfs[ipowfs].llt->pts->dx;
-		const double wvl=parms->powfs[ipowfs].wvl->p[iwvl];
-		const double dpsf=wvl/(nlpsf*dx)*206265.;
+	for(int iwvl=0; iwvl<nwvl; iwvl++){
+	    const double dx=powfs[ipowfs].llt->pts->dx;
+	    const double wvl=parms->powfs[ipowfs].wvl->p[iwvl];
+	    const double dpsf=wvl/(nlpsf*dx)*206265.;
+	    snprintf(header, 64,"dtheta=%g #arcsecond\n", dpsf); 
+	    free(psf->header); psf->header=strdup(header);	    
+	    for(int illt=0; illt<intstat->lotf->ny; illt++){
+
 		ccp(&psfhat, IND(lotf,iwvl,illt));
 		cfftshift(psfhat);
 		cfft2i(psfhat, 1);
@@ -349,9 +358,6 @@ void gensepsf(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
    detector from short expsoure PSF, the elongation transfer function of the
    sodium layer, and the detector transfer function. */
 void gensei(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
-    if(parms->powfs[ipowfs].radrot){
-	info2("Rotating PSF for Polar CCD\n");/*Used mainly for on-axis launch */
-    }
     INTSTAT_T *intstat=powfs[ipowfs].intstat;
     const int ncompx=powfs[ipowfs].ncompx;
     const int ncompy=powfs[ipowfs].ncompy;
@@ -547,8 +553,10 @@ void gensei(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 		    dcog(pgrad,IND(psepsf,isa,iwvl),0.5,0.5,0.1*pmax,0.2*pmax, 0);
 		}
 		ccpd(&sepsf,IND(psepsf,isa,iwvl));
-		cembedc(seotfk,sepsf,-angle,C_ABS);/*ABS to avoid small negative */
-
+		//cembedc(seotfk,sepsf,-angle,C_ABS);/*C_ABS causes sum of PSF to increase when there are negative values. Switch to literal copy.*/
+		cembed(seotfk, sepsf, -angle);
+		if(isa==1401) writebin(sepsf, "sepsf_%d", isa);
+		if(isa==1401) writebin(seotfk, "sepsfrot_%d", isa);
 		cfftshift(seotfk);/*PSF, peak in corner; */
 		cfft2(seotfk,-1);/*turn to OTF, peak in corner, max is 1 */
 		if(parms->powfs[ipowfs].mtchstc && fabs(pgrad[0])>EPS && fabs(pgrad[1])>EPS){
@@ -567,6 +575,7 @@ void gensei(const PARMS_T *parms, POWFS_T *powfs, int ipowfs){
 		    ccp(&intstat->fotf->p[isepsf]->p[iwvl*nsa+isa], seotfk);
 		}
 		cfft2(seotfk,1);/*PSF with peak in center. sum to (pixtheta/dtheta)^2 due to nominal.*/
+		if(isa==1401) writebin(seotfk, "seotfk_%d", isa);
 		/*no need fftshift becaose nominal is pre-treated */
 		dspmulcreal(IND(i0,isa,ii0)->p,si,seotfk->p, wvlsig);
 		ccp(&seotfk,seotfj);

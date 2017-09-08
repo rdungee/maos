@@ -98,6 +98,7 @@ X(sp) *X(spref)(X(sp) *A){
    move the matrix from res to A without change value of A itself.
 */
 void X(spmove)(X(sp) *A, X(sp) *res){
+
     if(!res || !A) 
 	error("Trying to move an NULL matrix\n");
     assert(issp(res) && issp(A));
@@ -249,11 +250,41 @@ int X(spcheck)(const X(sp) *sp){
 void X(spscale)(X(sp) *A, const T beta){
     if(A){
 	assert_sp(A);
-	/*if(A->nref[0]>1){
-	    error("spscale on referenced dsp\n");
-	    }*/
 	for(long i=0; i<A->p[A->ny]; i++){
 	    A->x[i]*=beta;
+	}
+    }
+}
+/**
+ * inplace scale X(sp) matrix elements.*/
+void X(spscalex)(X(sp) *A, const X(mat) *xs){
+    if(A){
+	assert_sp(A);
+	if(A->nx!=xs->nx){
+	    error("sparse matrix[%ldx%ld] does not match vector [%ldx%ld]\n",
+		  A->nx, A->ny, xs->nx, xs->ny);
+	}
+	for(long iy=0; iy<A->ny; iy++){
+	    for(long i=A->p[iy]; i<A->p[iy+1]; i++){
+		long ix=A->i[i];
+		A->x[i]*=xs->p[ix];
+	    }
+	}
+    }
+}
+/**
+ * inplace scale X(sp) matrix elements.*/
+void X(spscaley)(X(sp) *A, const X(mat) *ys){
+    if(A){
+	assert_sp(A);
+	if(A->ny!=ys->nx){
+	    error("sparse matrix[%ldx%ld] does not match vector [%ldx%ld]\n",
+		  A->nx, A->ny, ys->nx, ys->ny);
+	}
+	for(long iy=0; iy<A->ny; iy++){
+	    for(long i=A->p[iy]; i<A->p[iy+1]; i++){
+		A->x[i]*=ys->p[iy];
+	    }
 	}
     }
 }
@@ -468,6 +499,9 @@ X(sp) *X(spadd2)(const X(sp) *A,T a, const X(sp)*B,T b){
 	      A->nx, A->ny, B->nx, B->ny);
     }
     X(sp) *C=X(ss_add)(A,B,a,b);
+    if(!C){
+	warning("ss_add returned null\n");
+    }
     X(ss_dropzeros)(C);
     return C;
 }

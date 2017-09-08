@@ -330,11 +330,11 @@ dmat *skysim_sim(dmat **mresout, const dmat *mideal, const dmat *mideal_oa, doub
 			    case 1:/*both poisson and read out noise. */
 				{
 				    double bkgrnd=aster->wfs[iwfs].bkgrnd*dtrati;
-				    addnoise(ints[iwfs]->p[isa], &aster->rand, bkgrnd, bkgrnd, 0,0,IND(rnefs,idtrat,ipowfs));
+				    addnoise(ints[iwfs]->p[isa], &aster->rand, bkgrnd, bkgrnd, 0,0,0,IND(rnefs,idtrat,ipowfs));
 				}
 				break;
 			    case 2:/*there is still poisson noise. */
-				addnoise(ints[iwfs]->p[isa], &aster->rand, 0, 0, 0,0,0);
+				addnoise(ints[iwfs]->p[isa], &aster->rand, 0, 0, 0,0,0,0);
 				break;
 			    default:
 				error("Invalid noisy\n");
@@ -452,8 +452,7 @@ void skysim_save(const SIM_S *simu, const ASTER_S *aster, const double *ipres, i
     }
     writebin(aster[selaster].gain->p[seldtrat], "%s/gain",path);
     writebin(simu->mres->p[isky], "%s/mres",path);
-    writebin(simu->psd_tt,"%s/psd_tt",path);
-    writebin(simu->psd_ps,"%s/psd_ps",path);
+    writebin(simu->psds,"%s/psds",path);
     char fnconf[PATH_MAX];
     snprintf(fnconf,PATH_MAX,"%s/base.conf",path);
     FILE *fp=fopen(fnconf,"w");

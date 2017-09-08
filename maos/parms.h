@@ -56,7 +56,7 @@ typedef struct ATM_CFG_T{
     int nym;      /**<minimum turbulence screen size along y for fft*/
     int nxn;      /**<minimum turbulence screen size along to cover meta pupil*/
     int nyn;      /**<minimum turbulence screen size along to cover meta pupil*/
-    int fractal;  /**<1: Use fractal method to generate atmosphere screen.*/
+    int method;   /**<0: FFT Von Karman. 1: FFT Biharmonic. 2: Fractal method.*/
     int frozenflow;  /**<frozen flow. automatic if closeloop=1*/
     int ninit;    /**<Initial size of the screen in fractal method. >=2*/
     int share;    /**<0: disable sharing of atmosphere using file backend*/
@@ -124,6 +124,7 @@ typedef struct POWFS_CFG_T{
 		      to disable*/
     char *sninfile;/**<Speckle noisy input file. NULL to disable. not used*/
     double hs;     /**<height of guide star*/
+    double hc;     /**<conjugation height of WFS pupil*/
     double saat;   /**<subaperture area (normalized) threshold to drop subaperture.*/
     double safill2d;/**<subaperture lenslet throughgput. value is used  to alter amplitude map*/
     double saspherical;/**<Subaperture spherical aberration in nm RMS at best focus.*/
@@ -144,6 +145,8 @@ typedef struct POWFS_CFG_T{
 		       each subaperture in each wfs. */
     char *bkgrndfnc;/**<How much of the background in bkgrndfn can be
 		       calibrated out. depends on variability.*/
+    dmat *qe;       /**<File containing matrix of pixpsax*pixpsay specifying QE
+		     * of each pixel. To simulate PCCD non uniform response*/
     double rne;     /**<read out noise in electron per pixel per frame*/
     double pixblur; /**<pixel bluring due to leakage. relative to pixel size.*/
     double dsa;     /**<Size of subaperture in 1 dimension*/
@@ -241,6 +244,7 @@ typedef struct POWFS_CFG_T{
     /*Options for Pywfs*/
     double modulate;  /**<Pyramid modulation diamter in arcsec*/
     int    modulpos;  /**<Number of positions per modulation cycle*/
+    int    modulring; /**<Number of rings within the maximum radius to modulate*/
 }POWFS_CFG_T;
 /**
    contains input parmaeters for each wfs
@@ -524,8 +528,7 @@ typedef struct SIM_CFG_T{
     int dmclip;      /**<derived: Need to clip actuator stroke*/
     int dmclipia;    /**<derived: Need to clip inter-actuator stroke*/
     int dmproj;      /**<derived: Need to projection atmosphere onto DMspace. */
-    int ahstfocus;   /**<New new mode split in ahst + focus tracking*/
-
+    int ahstfocus;   /**<Make magnification mode free of focus in science*/
     int mvmport;     /**<Non zero: specify which port does the MVM server run on and connect to it for MVM reconstruction.*/
     char *mvmhost;   /**<Which host does the MVM server run*/
     int mvmsize;     /**<number of gradients to send each time. 0 is all.*/
@@ -595,13 +598,14 @@ typedef struct DBG_CFG_T{
     int ncpa_preload;/**<preload integrator with DM sys flat*/
     int ncpa_nouncorr;/**<1: do not include uncorrelatable error in science path.*/
     int i0drift;     /**<Control drift of i0 by driving it toward gradncpa*/
-    double atm;         /**<test special atmosphere*/
+    dmat *atm;         /**<test special atmosphere. <0: fourier mode with spatial frequency 1/dbg.atm m^-1. >0: zernike mode*/
     double gradoff_scale;/**<Scale the reference vector*/
     dmat *pwfs_psx;  /**<pyramid WFS pupil shift along x (in pixel). pupil ordering: -x+y, +x+y, -x-y, +x-y.*/
     dmat *pwfs_psy;  /**<pyramid WFS pupil shift along y (in pixel).*/
     double pwfs_flate;/**<pyramid flat edge angular width */
     double pwfs_flatv;/**<pyramid flat vertex angular width*/
     double pwfs_pupelong;/**<pyramid pupil (detector) elongation ratio (long axis / short axis).*/
+    int pwfs_side; /**<Make pyramid WFS a single roof only.*/
     dcell *dmoff;     /**<DM offset for simulating turbulence on the DM. dimension: ndm*nstep*/
     dcell *gradoff;   /**<Introduced additional gradient offset. dimension: nwfs*nstep*/
 }DBG_CFG_T;
@@ -612,7 +616,7 @@ typedef struct GPU_CFG_T{
     int wfs;         /**<Use GPU for wavefront sensor*/
     int evl;         /**<Use GPU for performance evaluation*/
     int tomo;        /**<Use GPU for tomography*/
-    int fit;         /**<Use GPU for DM fitting*/
+    int fit;         /**<Use GPU for DM fitting. Options: 1) assembled matrix 2) matrix free for RHS.*/
     int lsr;         /**<Use GPU for least square reconstruction*/
     int psf;         /**<Use GPU for accumulating PSF. */
     int moao;        /**<Use GPU for moao.*/
@@ -671,7 +675,8 @@ typedef struct SAVE_CFG_T{
     int setup;       /**<save preparation matrices*/
     int recon;       /**<save reconstructor information. large*/
     int mvst;        /**<MVST computation intermediate matrices*/
-    int ncpa;        /**<Save NCPA surface OPD on aper and powfs*/
+    int ncpa;        /**<save NCPA surface OPD on aper and powfs*/
+    int fdpcg;       /**<save FDPCG matrices*/
     /*run time */
     int atm;         /**<save atmosphere*/
     int run;         /**<save run time informaton for each time step*/

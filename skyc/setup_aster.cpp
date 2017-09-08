@@ -180,9 +180,9 @@ gradients. Similar to Z tilt since the mode is low order */
 void setup_aster_g(ASTER_S *aster, STAR_S *star, const PARMS_S *parms){
     /*2010-06-08: Tested against MATLAB skycoverage code. */
     aster->g=dcellnew(aster->nwfs,1);
-    if(parms->maos.nmod<5 || parms->maos.nmod>6){
+    /*if(parms->maos.nmod<5 || parms->maos.nmod>6){
 	error("Not compatible with the number of NGS modes\n");
-    }
+	}*/
     aster->ngs=mycalloc(aster->nwfs,long);
     aster->tsa=0;
     for(int iwfs=0; iwfs<aster->nwfs; iwfs++){
@@ -257,29 +257,31 @@ static dmat *calc_recon_error(const dmat *pgm,   /**<[in] the reconstructor*/
 			      ){
     dmat *psp=NULL;
     dmat *tmp=NULL;
+    dmat *var=NULL;
     dcp(&tmp, pgm);
     dmuldiag(tmp, neam);
     dmm(&psp, 0, tmp, pgm, "nt", 1);
-    /*It is right for both ix, iy to stop at ib.*/
-    double all[mcc->nx];
-    for(int ib=0; ib<mcc->ny; ib++){
-	all[ib]=0;
-	for(int iy=0; iy<=ib; iy++){
-	    for(int ix=0; ix<=ib; ix++){
-		all[ib]+=IND(psp,ix,iy)*IND(mcc,ix,iy);
-	    }
-	}
-    }
+    dfree(tmp);
+    dmm(&var, 0, mcc, psp, "nn", 1);
     dfree(psp);
-    dmat *res=dnew(3,1);
-    res->p[0]=all[5];//total error
-    res->p[1]=all[1];//total TT error
-    if(mcc->nx>5){
-	res->p[2]=all[5]-all[4];//focus alone
-	if(res->p[2]<0){
-	    res->p[2]=0;//due to coupling, this may be negative.
+    dmat *res=dnew(mcc->nx+1,1);
+    /*It is right for both ix, iy to stop at ib.*/
+    for(int ib=0; ib<mcc->ny; ib++){
+	res->p[ib]=IND(var, ib, ib);
+	res->p[mcc->ny]+=res->p[ib];//trace
+	if(res->p[ib]<0){
+	    res->p[ib]=fabs(res->p[ib]);
+	    /*
+	    writebin(pgm, "pgm");
+	    writebin(neam, "neam");
+	    writebin(mcc, "mcc");
+	    for(int ib2=0; ib2<mcc->nx; ib2++){
+		warning("mod[%d]=%g nm^2\n", ib2, res->p[ib2]*1e18);
+	    }
+	    exit(0);*/
 	}
     }
+    dfree(var);
     return res;
 }
 
@@ -293,6 +295,7 @@ void setup_aster_lsr(ASTER_S *aster, const PARMS_S *parms){
     aster->sigman=dcellnew(ndtrat,1);
     dmat *gm=ddup(aster->gm);
     if(aster->nwfs==1 && parms->maos.nmod==6 && gm->nx==8){
+	//focus and magnification mode degenerate in single GS mode.
 	info2("set 3rd column of gm to zero\n");
 	memset(gm->p+gm->nx*2, 0, sizeof(double)*gm->nx);
     }
@@ -359,91 +362,42 @@ static void setup_aster_servo(SIM_S *simu, ASTER_S *aster, const PARMS_S *parms)
     dmat*  pres_ngs=aster->res_ngs;
     for(int idtrat=0; idtrat<ndtrat; idtrat++){
 	int dtrat=parms->skyc.dtrats->p[idtrat];
-	double sigma_ngs= aster->sigman->p[idtrat]->p[0];
-	double sigma_tt = aster->sigman->p[idtrat]->p[1];
-	double sigma_ps = sigma_ngs-sigma_tt;
-	double sigma_focus = aster->sigman->p[idtrat]->p[2];
 	long nmod=parms->maos.nmod;
 	/*gsplit:
 	  0: All modes use the same gain.
-	  1: PS, TT, focus (if nmod>5) use different gains. 
-	  2: PS, TT use different gains. focus mode (if nmod>5) use PS gains.
-	 */
-
-	double res_ngs;/*residual error due to signal after servo rejection. */
-	double res_ngsn;/*residual error due to noise. */
+	  1: Different mode use defferent gain (2017-0-24) was only tt/ps separate.
+	*/
+	double res_ngs=0;/*residual error due to signal after servo rejection. */
+	double res_ngsn=0;/*residual error due to noise. */
 	const int servotype=parms->skyc.servo;
-	const int ng=parms->skyc.ngain;
-	aster->gain->p[idtrat]=dnew(ng,nmod);
-	dmat*  pgain=aster->gain->p[idtrat];
-	if(parms->skyc.gsplit){
-	    double pg_tt[ng+2];
-	    double pg_ps[ng+2];
-	    double pg_focus[ng+2];
+	const int ng=parms->skyc.ngain;//number of gain parameters
+	dmat*  pgain=aster->gain->p[idtrat]=dnew(ng,nmod);
+	for(int ipsd=0; ipsd<simu->psds->nx; ipsd++){
+	    double sigma=aster->sigman->p[idtrat]->p[parms->skyc.gsplit?ipsd:nmod];
+	    double pg[ng+2];
+	    
 	    if(parms->skyc.interpg){
-		interp_gain(pg_tt, simu->gain_tt[idtrat], simu->gain_x, sigma_tt);
-		interp_gain(pg_ps, simu->gain_ps[idtrat], simu->gain_x, sigma_ps);
-		interp_gain(pg_focus, simu->gain_focus[idtrat], simu->gain_x, sigma_focus);
+		interp_gain(pg, simu->gain_pre->p[idtrat]->p[ipsd], simu->gain_x, sigma);
 	    }else{
 		dmat *sigma2=dnew(1,1); 
-		dcell *tmp;
-		sigma2->p[0]=sigma_tt;
-		tmp=servo_optim(simu->psd_tt, parms->maos.dt, dtrat, parms->skyc.pmargin, sigma2, servotype);
-		memcpy(pg_tt, tmp->p[0]->p, (ng+2)*sizeof(double)); dcellfree(tmp);
-
-		sigma2->p[0]=sigma_ps;
-		tmp=servo_optim(simu->psd_ps,    parms->maos.dt, dtrat, parms->skyc.pmargin, sigma2, servotype);
-		memcpy(pg_ps, tmp->p[0]->p, (ng+2)*sizeof(double)); dcellfree(tmp);
-
-		if(nmod>5){
-		    sigma2->p[0]=sigma_focus;
-		    tmp=servo_optim(simu->psd_focus, parms->maos.dt, dtrat, parms->skyc.pmargin, sigma2, servotype);
-		    memcpy(pg_focus, tmp->p[0]->p, (ng+2)*sizeof(double)); dcellfree(tmp);
-		}
+		sigma2->p[0]=sigma;
+		dcell *tmp=servo_optim(simu->psds->p[ipsd], parms->maos.dt, dtrat, parms->skyc.pmargin, sigma2, servotype);
+		memcpy(pg, tmp->p[0]->p, (ng+2)*sizeof(double)); 
+		dcellfree(tmp);
 		dfree(sigma2);
 	    }
-	    res_ngs  = pg_tt[ng] + pg_ps[ng] + pg_focus[ng];//residual mode
-	    res_ngsn = pg_tt[ng+1] + pg_ps[ng+1] + pg_focus[ng+1];//error due to noise
-	    for(int imod=0; imod<MIN(nmod,5); imod++){
-		memcpy(PCOL(pgain,imod), imod<2?pg_tt:pg_ps, sizeof(double)*ng);
-	    }
-	    if(nmod>5){
-		memcpy(PCOL(pgain,5), pg_focus, sizeof(double)*ng);
-	    }
-	}else{
-	    double pg_ngs[ng+2];
-	    if(parms->skyc.interpg){
-		interp_gain(pg_ngs, simu->gain_ngs[idtrat], simu->gain_x, sigma_ngs);
-	    }else{
-		dmat *sigma2=dnew(1,1); sigma2->p[0]=sigma_ngs;
-		dcell *tmp;
-		tmp=servo_optim(simu->psd_ngs, parms->maos.dt, dtrat, parms->skyc.pmargin, sigma2, servotype);
-		memcpy(pg_ngs, tmp->p[0]->p, (ng+2)*sizeof(double)); dcellfree(tmp);
-	    }
-	    res_ngs=pg_ngs[ng];
-	    res_ngsn=pg_ngs[ng+1];
-	    for(int imod=0; imod<nmod; imod++){
-		memcpy(PCOL(pgain,imod), pg_ngs, sizeof(double)*ng);
-	    }
+	    res_ngs  += pg[ng];
+	    res_ngsn += pg[ng+1];
+	    memcpy(PCOL(pgain,ipsd), pg, sizeof(double)*ng);
+	}
+	
+	for(int imod=simu->psds->nx; imod<nmod; imod++){
+	    memcpy(PCOL(pgain,imod), PCOL(pgain,0), sizeof(double)*ng);
 	}
 	IND(pres_ngs,idtrat,0)=res_ngs+res_ngsn;/*error due to signal and noise */
 	IND(pres_ngs,idtrat,1)=res_ngs;/*error due to signal */
 	IND(pres_ngs,idtrat,2)=res_ngsn;/*error due to noise propagation. */
-	/*if(parms->skyc.reest){//estiamte error in time domain
-	    dmat *sigma2=dnew(nmod,nmod);dmat*  psigma2=sigma2;
-	    dmat*  pmcc=parms->maos.mcc;
-	    //convert noise into mode space from WFE space.
-	    IND(psigma2,0,0)=IND(psigma2,1,1)=sigma_tt/(2*IND(pmcc,0,0));
-	    IND(psigma2,2,2)=IND(psigma2,3,3)=IND(psigma2,4,4)=sigma_ps/(3*IND(pmcc,2,2));
-	    if(nmod>5){
-		IND(psigma2,5,5)=sigma_focus/IND(pmcc,5,5);
-	    }
-	    dmat *res=servo_test(simu->mideal, parms->maos.dt, dtrat, sigma2, aster->gain->p[idtrat]);
-	    double rms=calc_rms(res,parms->maos.mcc, parms->skyc.evlstart);
-	    IND(pres_ngs,idtrat,0)=rms;
-	    dfree(sigma2);
-	    dfree(res);
-	    }*/
+
 	dmat *g_tt=dnew_ref(ng,1,PCOL(pgain,0));
 	double gain_n;
 	aster->res_ws->p[idtrat]=servo_residual(&gain_n, parms->skyc.psd_ws, 
@@ -521,9 +475,9 @@ static void setup_aster_kalman(SIM_S *simu, ASTER_S *aster, STAR_S *star, const 
 	    aster->kalman[0]=sde_kalman(simu->sdecoeff, parms->maos.dt, aster->dtrats, aster->g, aster->neam[0], 0);
 	    dmat *rests=0;
 #if 1   //more accurate
-	    dmat *res=skysim_sim(parms->skyc.dbg?&rests:0, simu->mideal, simu->mideal_oa, simu->rmsol,
+	    dmat *res=skysim_sim(parms->skyc.dbg?&rests:0, simu->mideal, simu->mideal_oa, simu->varol,
 				 aster, 0, parms, -1, 1, -1);
-	    double res0=res?res->p[0]:simu->rmsol;
+	    double res0=res?res->p[0]:simu->varol;
 	    dfree(res);
 #else
 	    rests=kalman_test(aster->kalman[0], simu->mideal);
@@ -577,8 +531,8 @@ static void setup_aster_kalman(SIM_S *simu, ASTER_S *aster, STAR_S *star, const 
 	    aster->kalman[idtrat]=sde_kalman(simu->sdecoeff, parms->maos.dt, dtrats, aster->g, aster->neam[idtrat], 0);
 	    //toc("kalman");
 #if 1
-	    dmat *res=skysim_sim(0, simu->mideal, simu->mideal_oa, simu->rmsol, aster, 0, parms, idtrat, 1, -1);
-	    double rms=res?res->p[0]:simu->rmsol;
+	    dmat *res=skysim_sim(0, simu->mideal, simu->mideal_oa, simu->varol, aster, 0, parms, idtrat, 1, -1);
+	    double rms=res?res->p[0]:simu->varol;
 	    dfree(res);
 #else
 	    dmat *res=kalman_test(aster->kalman[idtrat], simu->mideal);
@@ -629,7 +583,7 @@ int setup_aster_select(double *result, ASTER_S *aster, int naster, STAR_S *star,
 	    if(rms<mini){
 		mini=rms;
 		aster[iaster].mdtrat=idtrat;
-		aster[iaster].mresol=rms;
+		aster[iaster].mresest=rms;
 	    }
 	}
 	IND(pimin,0,iaster)=mini;
@@ -694,8 +648,9 @@ int setup_aster_select(double *result, ASTER_S *aster, int naster, STAR_S *star,
     }
     qsort(imin->p, naster, 2*sizeof(double),(int(*)(const void*,const void*))sortfun);
     result[0]=minimum;
+    result[1]=master;
     if(aster[master].mdtrat!=-1){
-	result[1]=parms->skyc.fss[aster[master].mdtrat];
+	result[2]=parms->skyc.fss[aster[master].mdtrat];
     }
     int count=0;
     if(minimum<maxerror){
@@ -709,10 +664,18 @@ int setup_aster_select(double *result, ASTER_S *aster, int naster, STAR_S *star,
 		count++;
 		int iaster=(int)IND(pimin,1,jaster);
 		aster[iaster].use=1;/*mark as valid. */
+		char temp1[1024], temp2[1024]; temp1[0]='\0';
 		for(int iwfs=0; iwfs<aster[iaster].nwfs; iwfs++){
 		    int istar=aster[iaster].wfs[iwfs].istar;
 		    int ipowfs=aster[iaster].wfs[iwfs].ipowfs;
 		    star[istar].use[ipowfs]=1;
+		    if(parms->skyc.estimate && parms->skyc.nsky==1){
+			snprintf(temp2, 1023,"(x=%.1f, y=%.1f, J=%.1f) ", star[istar].thetax*206265, star[istar].thetay*206265, star[istar].mags->p[0]);
+			strncat(temp1, temp2, 1023);
+		    }
+		}
+		if(parms->skyc.estimate){
+		    info2("%s, %g Hz, %g nm\n", temp1, parms->skyc.fss[aster[iaster].mdtrat], sqrt(aster[iaster].mresest)*1e9);
 		}
 	    }
 	}

@@ -27,7 +27,8 @@ typedef int16_t char16_t;
 #include <mex.h>
 #include <stdint.h>
 #include <errno.h>
-#if !defined(MX_API_VER) || MX_API_VER < 0x07030000
+#ifndef MWSIZE_MAX
+//#if !defined(MX_API_VER) || MX_API_VER < 0x07030000 //MATLAB2016 dropped this def.
 typedef unsigned int mwIndex;
 #endif
 typedef struct {float x; float y;} fcomplex;
@@ -44,7 +45,15 @@ typedef struct {double x; double y;} dcomplex;
 	fprintf(stderr, "\033[01;31m%-15s:%-3d Fatal error\t",__FILE__, __LINE__); \
 	fprintf(stderr, A);						\
 	fprintf(stderr,"\033[00;00m");					\
-	mexErrMsgTxt("Error happend\n");				\
+	mexErrMsgTxt("Error happened\n");				\
+    }while(0)
+
+#define error2(A...) \
+    do{									\
+	fprintf(stderr, "\033[01;31m");					\
+	fprintf(stderr, A);						\
+	fprintf(stderr,"\033[00;00m");					\
+	mexErrMsgTxt("Error happened\n");				\
     }while(0)
 
 typedef struct file_t{
@@ -87,8 +96,9 @@ typedef struct file_t{
 
 typedef struct {
     uint32_t magic;
-    uint64_t nx;
-    uint64_t ny;
+    uint64_t ntot;
+    uint64_t ndim;
+    mwSize *dims;
     char *str;
 }header_t;
 file_t* zfopen(const char *fn, const char *mod);

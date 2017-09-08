@@ -114,16 +114,18 @@ void gpu_wfsgrad_update_mtche(const PARMS_T *parms, const POWFS_T *powfs){
 		    dmat *mtche=concat_dcell_as_vector(mtchec);
 		    dcellfree(mtchec);
 		    if(iwfs!=iwfs0 && cuwfs[iwfs].mtche.P()==cuwfs[iwfs0].mtche.P()){
-			info("Reset mtche to 0\n");
+			//Delete old values.
 			cuwfs[iwfs].mtche=0;
 			cuwfs[iwfs].i0sum=0;
 		    }
 		    cp2gpu(cuwfs[iwfs].mtche, mtche);
 		    dfree(mtche);
 		    cp2gpu(cuwfs[iwfs].i0sum, powfs[ipowfs].intstat->i0sum->p+nsa*icol, nsa, 1);
+		    cuwfs[iwfs].i0sumsum=powfs[ipowfs].intstat->i0sumsum->p[icol];
 		}else{
 		    cuwfs[iwfs].mtche=cuwfs[iwfs0].mtche;
 		    cuwfs[iwfs].i0sum=cuwfs[iwfs0].i0sum;
+		    cuwfs[iwfs].i0sumsum=cuwfs[iwfs0].i0sumsum;
 		}
 	    }
 	}
@@ -184,11 +186,11 @@ void gpu_wfsgrad_init(const PARMS_T *parms, const POWFS_T *powfs){
 		    }
 		}
 	    }
+	    cp2gpu(cupowfs[ipowfs].saa, powfs[ipowfs].saa);
 	    if(powfs[ipowfs].pywfs){
 		cupowfs[ipowfs].pywfs=powfs[ipowfs].pywfs;
 		cp2gpu(cupowfs[ipowfs].pyramid, powfs[ipowfs].pywfs->pyramid);
 		cp2gpu(cupowfs[ipowfs].pynominal, powfs[ipowfs].pywfs->nominal);
-		cp2gpu(cupowfs[ipowfs].saa, powfs[ipowfs].saa);
 		cp2gpu(cupowfs[ipowfs].pyoff, powfs[ipowfs].pywfs->gradoff);
 		if(powfs[ipowfs].pywfs->msaloc){
 		    cupowfs[ipowfs].msaloc=cuarray<culoc_t>(powfs[ipowfs].pywfs->msaloc->nx, 1);
@@ -207,7 +209,7 @@ void gpu_wfsgrad_init(const PARMS_T *parms, const POWFS_T *powfs){
 	gpu_set(wfsgpu[iwfs]);/*Only initialize WFS in assigned GPU. */
 	cuarray<cupowfs_t> &cupowfs=cudata->powfs;
 	cuarray<cuwfs_t> &cuwfs=cudata_t::wfs;
-	cuwfs[iwfs].stream.reset();
+	cuwfs[iwfs].stream.reset();//Recreate streams in current GPU.
 	cuwfs[iwfs].powfs=&cupowfs[ipowfs];
 	const int nsa=powfs[ipowfs].saloc->nloc;
 	const int nwvl=parms->powfs[ipowfs].nwvl;
@@ -357,6 +359,8 @@ void gpu_wfsgrad_init(const PARMS_T *parms, const POWFS_T *powfs){
 			if(notfused){
 			    int icol=powfs[ipowfs].dtf[iwvl].nominal->ny>1?wfsind:0;
 			    ccell *nominalc=ccellsub(powfs[ipowfs].dtf[iwvl].nominal, 0, 0, icol, 1);
+			    //Convert nominal from cell of vector to matrix so
+			    //that cuda kernel can address multiple subapertures
 			    cmat *nominal=concat_ccell_as_vector(nominalc);
 			    ccellfree(nominalc);
 			    cp2gpu(cuwfs[iwfs].dtf[iwvl].nominal, nominal);
@@ -370,6 +374,11 @@ void gpu_wfsgrad_init(const PARMS_T *parms, const POWFS_T *powfs){
 		}else{
 		    cuwfs[iwfs].dtf  = cuwfs[iwfs0].dtf;
 		    cuwfs[iwfs].srot = cuwfs[iwfs0].srot;
+		}
+		if(wfsind==0 || wfsgpu[iwfs]!=wfsgpu[iwfs0]){
+		    cp2gpu(cuwfs[iwfs].qe, parms->powfs[ipowfs].qe);
+		}else{
+		    cuwfs[iwfs].qe=cuwfs[iwfs0].qe;
 		}
 		/*Matched filter */
 		if(parms->powfs[ipowfs].phytypesim==1){
@@ -451,8 +460,8 @@ void gpu_wfsgrad_init(const PARMS_T *parms, const POWFS_T *powfs){
 	    }
 	}/*if phy */
 	CUDA_SYNC_DEVICE;
-	gpu_print_mem("wfs init");
     }/*for iwfs */
+    gpu_print_mem("wfs init");
     gpu_wfsgrad_update_etf(parms, powfs);
     gpu_wfsgrad_update_mtche(parms, powfs);
 }
@@ -469,7 +478,7 @@ void gpu_wfs_init_sim(const PARMS_T *parms, POWFS_T *powfs){
 	if(parms->powfs[ipowfs].usephy || parms->powfs[ipowfs].dither){
 	    if(!cuwfs[iwfs].ints){
 		if(parms->powfs[ipowfs].type==1){//PYWFS
-		    cuwfs[iwfs].ints=curcell(1,1,nsa,4);
+		    cuwfs[iwfs].ints=curcell(1,1,nsa,powfs[ipowfs].pywfs->nside);
 		}else{
 		    cuwfs[iwfs].ints=curcell(nsa,1,powfs[ipowfs].pixpsax,powfs[ipowfs].pixpsay);
 		}

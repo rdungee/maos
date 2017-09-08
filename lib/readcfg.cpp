@@ -34,7 +34,7 @@
    Compatibility mode: old keys are automatically renamed to new keys.
 */
 #define COMPATIBILITY 1
-
+DEF_ENV_FLAG(PERMISSIVE, 0)
 #if COMPATIBILITY == 1
 #define RENAME(old,new)							\
     if(!strcmp(var,#old)){						\
@@ -53,10 +53,10 @@
 static void *MROOT=NULL;
 
 typedef struct STORE_T{
-    char *key;
-    char *data;
-    long protect;
-    long count;
+    char *key;    //Name of the entry
+    char *data;   //Value of the entry
+    long priority;//Priority of the entry
+    long used;    //Whether the entry has been used
 }STORE_T;
 static int key_cmp(const void *a, const void *b){
     return strcmp(((STORE_T*)a)->key, ((STORE_T*)b)->key);
@@ -162,7 +162,7 @@ static void print_key(const void *key, VISIT which, int level){
     (void)level;
     if(which==leaf || which==postorder){
 	if(fpout){
-	    if(!store->protect){
+	    if(!store->priority){
 		fprintf(fpout, "#");
 	    }
 	    fprintf(fpout, "%s=", store->key);
@@ -172,11 +172,19 @@ static void print_key(const void *key, VISIT which, int level){
 		fprintf(fpout, "\n");
 	    }
 	}
-	if(!store->data || strcmp(store->data, "ignore")){
-	    if(store->count==0 ){
-		error("key \"%s\" is not recognized, value is %s\n", store->key, store->data);
-	    }else if(store->count!=1){
-		error("Key %s is used %ld times\n", store->key, store->count);
+	if(store->used!=1 && (!store->data || strcmp(store->data, "ignore"))){
+	    if(store->used==0 ){
+		if(PERMISSIVE){
+		    warning("key \"%s\" is not recognized, value is %s\n", store->key, store->data);
+		}else{
+		    error("key \"%s\" is not recognized, value is %s\n", store->key, store->data);
+		}
+	    }else if(store->used!=1){
+		if(PERMISSIVE){
+		    warning("Key %s is used %ld times\n", store->key, store->used);
+		}else{
+		    error("Key %s is used %ld times\n", store->key, store->used);
+		}
 	    }
 	}
     }
@@ -191,6 +199,13 @@ static void delete_leaf(const void *key, VISIT which, int level){
 	free(store);
     }
 }
+void erase_config(){
+   while(MROOT){
+	twalk(MROOT, delete_leaf);
+    }
+    nused=0;   
+    nstore=0;
+}
 /**
    Save all configs to file and check for unused config options.
  */
@@ -204,28 +219,25 @@ void close_config(const char *format, ...){
 	if(fpout) fclose(fpout);
 	fpout=0;
     }
-    while(MROOT){
-	twalk(MROOT, delete_leaf);
-    }
-    nused=0;
+    erase_config(); 
 }
 /**
    Start the read config process by opening .conf files and fill the entries in
-   a hash table. A key can be protected. If a key is not protected, newer
-   entries with the same key will override a previous entry.
+   a hash table. A key has a priority or 0 or higher. A new key with same or
+   higher priority can override previous entry.
  */
 void open_config(const char* config_in, /**<[in]The .conf file to read*/
-		 const char* prefix,/**<[in]if not NULL, prefix the key with this.*/
-		 long protect       /**<[in]whether we protect the value*/
+		 const char* prefix,    /**<[in]if not NULL, prefix the key with this.*/
+		 const int priority     /**<[in]Priorities of keys.*/
 		 ){
     if(!config_in) return;
     FILE *fd=NULL;
     char *config_file=NULL;
     int print_override=1;
     if(check_suffix(config_in, ".conf")){
-	if(exist(config_in)){
+	if(exist(config_in)){//from current path
 	    config_file=strdup(config_in);
-	}else{
+	}else{//from config dir
 	    config_file=find_file(config_in);
 	    print_override=0;
 	}
@@ -251,7 +263,7 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
     char *sline=NULL;
     int countnew=0;
     int countold=0;
-    
+    int countskip=0;
 #define MAXLN 40960
     char ssline[MAXLN];
     ssline[0]='\0';/*stores the available line. */
@@ -298,16 +310,12 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 	if(!eql){//no equal sign
 	    if(check_suffix(ssline, ".conf")){
 		char *embeded=strextract(ssline);
-		if(embeded){
-		    open_config(embeded, prefix, protect);
-		    free(embeded);
-		}
-	    }else if(!strcmp(ssline, "__protect_start")){
-		protect+=10000;
-	    }else if(!strcmp(ssline, "__protect_end")){
-		protect-=10000; 
-		if(protect<0){
-		    error("__protect_end must appear after __protect_start, in the same file");
+		open_config(embeded, prefix, priority);
+		free(embeded);
+	    }else if(!strcmp(ssline, "__reset__")){
+		if(nstore>0){
+		    warning("Replacing all existing input\n");
+		    erase_config();
 		}
 	    }else{
 		error("Input (%s) is not valid\n", ssline);
@@ -338,7 +346,7 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 	    /*info("Opening embeded config file %s\n",value); */
 	    char *embeded=strextract(value);
 	    if(embeded){
-		open_config(embeded,prefix,protect);
+		open_config(embeded,prefix, priority);
 		free(embeded);
 	    }
 	}else{
@@ -347,6 +355,7 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 	      Compatibility mode: rename old key names to new key names. Will
 	      remove in the future.
 	     */
+	    RENAME(atm.fractal, atm.method);
 	    RENAME(atm.zadeg, sim.zadeg);
 	    /*Added on 2011-04-28 */
 	    RENAME(dbg.noatm, sim.noatm);
@@ -379,14 +388,17 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 	    }else{
 		store->data=NULL;
 	    }
-	    store->protect=protect;
-	    store->count=0;
-
+	    store->used=0;
+	    store->priority=priority;
 	    void *entryfind=tfind(store, &MROOT, key_cmp);
 	    if(entryfind){ 
 		/*same key found */
 		STORE_T *oldstore=*(STORE_T**)entryfind;
-		if(append){
+		if(oldstore->priority > priority){
+		    countskip++;
+		    info2("Not overriding %-20s=%s", store->key, oldstore->data);
+		    //Skip the entry.
+		}else if(append){
 		    /*concatenate new value with old value for arrays. both have to start/end with [/]*/
 		    const char *olddata=oldstore->data;
 		    const char *newdata=store->data;
@@ -402,22 +414,20 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 			strncat(oldstore->data, newdata+1, nnewdata-1);
 		    }
 		}else{
-		    if(oldstore->protect<=protect){
-			if(print_override && 
-			   (((oldstore->data==NULL || store->data==NULL)
-			     &&(oldstore->data != store->data))||
-			    ((oldstore->data!=NULL && store->data!=NULL)
-			     &&strcmp(oldstore->data, store->data)))){
-			    info2("Overriding %-20s\t{%s}-->{%s}\n", 
-				  store->key, oldstore->data, store->data);
-			}
-			/*free old value */
-			free(oldstore->data);
-			/*move pointer of new value. */
-			oldstore->data=store->data; store->data=0;
-			oldstore->protect=store->protect;
-			oldstore->count=store->count;
+		    if(print_override && 
+		       (((oldstore->data==NULL || store->data==NULL)
+			 &&(oldstore->data != store->data))||
+			((oldstore->data!=NULL && store->data!=NULL)
+			 &&strcmp(oldstore->data, store->data)))){
+			info2("Overriding %-20s\t{%s}-->{%s}\n", 
+			      store->key, oldstore->data, store->data);
 		    }
+		    /*free old value */
+		    free(oldstore->data);
+		    /*move pointer of new value. */
+		    oldstore->data=store->data; store->data=0;
+		    oldstore->priority=priority;
+		    oldstore->used=store->used;
 		}
 		countold++;
 		free(store->data);
@@ -434,7 +444,7 @@ void open_config(const char* config_in, /**<[in]The .conf file to read*/
 	}
 	ssline[0]='\0';
     }
-    info2("loaded %3d (%3d new) records from '%s'\n",countnew+countold,countnew, fd?config_file:"command line");
+    info2("loaded %3d (%3d new) records from '%s'\n",countnew+countold,countnew,fd?config_file:"command line");
     if(fd){
 	fclose(fd);
     }
@@ -451,10 +461,10 @@ static const STORE_T* getrecord(char *key, int mark){
     store.key=key;
     if((found=tfind(&store, &MROOT, key_cmp))){
 	if(mark){
-	    if((*(STORE_T**)found)->count){
+	    if((*(STORE_T**)found)->used){
 		error("This record %s is already read\n",key);
 	    }
-	    (*(STORE_T**)found)->count++;
+	    (*(STORE_T**)found)->used++;
 	    nused++;
 	}
     }else if(mark){
@@ -509,7 +519,7 @@ int readcfg_peek_override(const char *format,...){
     if(!store){
 	return 0;
     }else{
-	return store->protect;
+	return store->priority;
     }
 }
 /**

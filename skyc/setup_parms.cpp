@@ -64,7 +64,6 @@ static void setup_parms_skyc(PARMS_S *parms){
     readcfg_dblarr_n(&parms->skyc.pixoffy, parms->skyc.npowfs,"skyc.pixoffy");
     readcfg_strarr_nmax(&parms->skyc.fnpsf1, parms->skyc.npowfs, "skyc.fnpsf1");
     READ_INT(skyc.limitnstep);
-    READ_DBL(skyc.intgain);
     READ_DBL(skyc.rne);
     READ_DBL(skyc.imperrnm);
     READ_DBL(skyc.imperrnmb);
@@ -108,6 +107,8 @@ static void setup_parms_skyc(PARMS_S *parms){
     READ_INT(skyc.multirate);
     READ_MAT(skyc.snrmin);
     READ_INT(skyc.usephygrad);
+
+    READ_INT(skyc.estimate);
 }
 /**
    Setup infromation output from maos run.
@@ -164,6 +165,24 @@ static void setup_parms_maos(PARMS_S *parms){
     }else{
 	parms->maos.nwddeg=0;
 	parms->maos.wddeg=NULL;
+    }
+    if(readcfg_peek("maos.indps")){
+	READ_INT(maos.indps);
+	READ_INT(maos.indastig);
+	READ_INT(maos.indfocus);
+    }else{//old configuration.
+	parms->maos.indastig=0;//not implemented
+	if(parms->maos.nmod>=5){
+	    parms->maos.indps=2;
+	    if(parms->maos.nmod>5){
+		parms->maos.indfocus=5;
+	    }
+	}else{
+	    parms->maos.indps=0;
+	    if(parms->maos.nmod>2){
+		parms->maos.indfocus=2;
+	    }
+	}
     }
 }
 
@@ -223,9 +242,11 @@ PARMS_S *setup_parms(const ARG_S *arg){
 	parms->skyc.ngain=0;
 	break;
     case 1:
-	parms->skyc.ngain=1;break;
+	parms->skyc.ngain=1;
+	break;
     case 2:
-	parms->skyc.ngain=3; break;
+	parms->skyc.ngain=3;
+	break;
     default:
 	error("Invalid skyc.servo=%d\n", parms->skyc.servo);
     }
@@ -380,9 +401,13 @@ PARMS_S *setup_parms(const ARG_S *arg){
     if(parms->skyc.ngsalign){
 	warning2("NGS are aligned to grid spaced by %g\"\n", parms->maos.ngsgrid);
     }
+
     if(parms->skyc.psdcalc){
 	info("Calculating PSDs from time series\n");
-    }else if(0){
+    }else{
+	error("Please implement PSD load\n");
+    }
+/* if(0){
 	char temp[80]; 
 	snprintf(temp,80, "PSD/PSD_NGS_r0z_%.4f_za%g.bin",parms->maos.r0z, parms->maos.zadeg);
 	parms->skyc.psd_ngs=dread("%s",temp); 
@@ -415,6 +440,7 @@ PARMS_S *setup_parms(const ARG_S *arg){
 	parms->skyc.psd_focus=dread("%s",temp); 
 	info2("Loading PSD of focus modes from %s\n", temp);
     }
+*/
     close_config("skyc_recent.conf");
 
     if(parms->skyc.neaaniso){

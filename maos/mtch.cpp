@@ -49,6 +49,8 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
     dcell *sanea=dcellnew(ni0,1);
     
     intstat->i0sum=dnew(nsa,ni0);
+    intstat->i0sumsum=dnew(ni0, 1);
+
     dcell *i0s=intstat->i0;
     dcell* gxs=intstat->gx/*PDELL*/;
     dcell* gys=intstat->gy/*PDELL*/;
@@ -86,12 +88,13 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
 	sanea->p[ii0]=dnew(nsa,2);
 	dmat*  psanea=sanea->p[ii0]/*PDMAT*/;
 	double i0summax=0;
+	double i0sumsum=0;
 	int crdisable=0;/*adaptively disable mtched filter based in FWHM. */
 	int ncrdisable=0;
 	const int radgx=parms->powfs[ipowfs].radgx;
 	for(int isa=0; isa<nsa; isa++){
 	    double pixrot=0;//pixel rotation
-	    if(srot){
+	    if(srot && parms->powfs[ipowfs].radpix){
 		pixrot=srot[isa]; 
 	    }
 	    if(mtchadp){
@@ -112,11 +115,13 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
 		bkgrnd2c= powfs[ipowfs].bkgrndc->p[ii0*nsa+isa]; 
 	    }
 	    dmat *nea2=0;
-	    IND(mtche,isa,ii0)=mtch(&nea2, IND(i0s,isa,ii0), IND(gxs,isa,ii0),  IND(gys,isa,ii0),
-				     bkgrnd2, bkgrnd2c, bkgrnd, bkgrndc, rne, pixthetax, pixthetay, 
-				     pixrot, radgx, crdisable?0:parms->powfs[ipowfs].mtchcr);
+	    IND(mtche,isa,ii0)=mtch(&nea2, IND(i0s,isa,ii0), IND(gxs,isa,ii0), IND(gys,isa,ii0), 
+				    parms->powfs[ipowfs].qe,
+				    bkgrnd2, bkgrnd2c, bkgrnd, bkgrndc, rne, pixthetax, pixthetay,
+				    pixrot, radgx, crdisable?0:parms->powfs[ipowfs].mtchcr);
 	    
 	    IND(i0sum,isa,ii0)=dsum(IND(i0s,isa,ii0));
+	    i0sumsum+=IND(i0sum,isa,ii0);
 	    if(IND(i0sum,isa,ii0)>i0summax){
 		i0summax=IND(i0sum,isa,ii0);
 	    }
@@ -136,7 +141,7 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
 	    IND(saneaxy, isa, ii0)=nea2;
 	}/*isa  */
 	double siglev=parms->powfs[ipowfs].dtrat*parms->wfs[iwfs].siglev;
-	if(i0summax<siglev*0.1 || i0summax>siglev){
+	if(i0summax<siglev*0.1 || i0summax>siglev*1.1){
 	    warning("i0 sum to maximum of %g, wfs %d has siglev of %g\n",
 		    i0summax, iwfs, siglev);
 	}
@@ -144,6 +149,7 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
 	    info2("Mtched filter contraint are disabled for %d subaps out of %d.\n",
 		  ncrdisable, nsa);
 	}
+	intstat->i0sumsum->p[ii0]=i0sumsum;
     }/*ii0 */
     if(print_nea){
 	info2("Matched filter sanea:\n");
@@ -171,23 +177,25 @@ void genmtch(const PARMS_T *parms, POWFS_T *powfs, const int ipowfs){
 		}
 	    }
 	}else{
-	    for(int ii0=0; ii0<ni0; ii0++){
-		info2("ii0=%d:\n",ii0);
-		dmat*  psanea=sanea->p[ii0]/*PDMAT*/;
-		double dsa=powfs[ipowfs].saloc->dx;
-		double llimit=-dsa/2;
-		double ulimit=dsa/2;
-		info2("sa index: radius   noise equivalent angle\n");
-		for(int isa=0; isa<nsa; isa++){
-		    double locx=powfs[ipowfs].saloc->locx[isa];
-		    double locy=powfs[ipowfs].saloc->locy[isa];
-		    if(nsa<10 || (locx>0&&locy>llimit&&locy<ulimit)){
-			info2("sa %5d: %5.1f m, (%6.2f, %6.2f) mas\n", 
-			      isa, locx, sqrt(IND(psanea,isa,0))*206265000,
-			      sqrt(IND(psanea,isa,1))*206265000);
-		    }
-		}/*isa  */
-	    }/*ii0 */
+	    double dsa=powfs[ipowfs].saloc->dx;
+	    double llimit=-dsa/2;
+	    double ulimit=dsa/2;
+	    info2("sa index: radius   noise equivalent angle\n");
+	    for(int isa=0; isa<nsa; isa++){
+		double locx=powfs[ipowfs].saloc->locx[isa];
+		double locy=powfs[ipowfs].saloc->locy[isa];
+		if((parms->powfs[ipowfs].llt && (nsa<10 || (locx>0&&locy>llimit&&locy<ulimit)))
+		   ||(!parms->powfs[ipowfs].llt && locx>=0 && locx<dsa*0.6 && locy>=0 && locy<dsa*0.6)
+		    ){
+		    info2("sa%4d:%4.1fm",isa, locx);
+		    for(int ii0=0; ii0<ni0; ii0++){
+			info2(" (%4.1f,%4.1f)", 
+			      sqrt(IND(sanea->p[ii0],isa,0))*206265000,
+			      sqrt(IND(sanea->p[ii0],isa,1))*206265000);
+		    }//for ii0
+		    info2("mas\n");
+		}
+	    }/*isa  */
 	}
     }
     if(parms->powfs[ipowfs].phytype==1 && parms->save.setup){

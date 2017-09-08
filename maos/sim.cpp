@@ -118,7 +118,7 @@ void maos_isim(int isim){
     }
     OMPTASK_SINGLE{
 	if(parms->sim.dmproj){
-	    /* teporarily disable FR.M so that Mfun is used.*/
+	    /* temporarily disable FR.M so that Mfun is used.*/
 	    cell *FRM=recon->FR.M; recon->FR.M=NULL; 
 	    muv_solve(&simu->dmproj, &recon->FL, &recon->FR, NULL);
 	    recon->FR.M=FRM;/*set FR.M back*/
@@ -151,7 +151,7 @@ void maos_isim(int isim){
 		//Queue tasks on GPU, no stream sync is done
 		QUEUE_THREAD(group, simu->perf_evl_pre, 0);
 	    }
-	    if(!parms->tomo.ahst_idealngs && parms->gpu.wfs && !NO_WFS){
+	    if(parms->tomo.ahst_idealngs!=1 && parms->gpu.wfs && !NO_WFS){
 		//task for each wfs
 		QUEUE_THREAD(group, simu->wfs_grad_pre, 0);
 	    }
@@ -167,8 +167,8 @@ void maos_isim(int isim){
 		QUEUE(group, perfevl, simu, 1, 0);
 	    }
 	    if(!NO_WFS){
-		if(parms->tomo.ahst_idealngs || (parms->gpu.wfs && !parms->gpu.evl)){
-		    //in ahst_idealngs mode, weight for perfevl to finish.
+		if(parms->tomo.ahst_idealngs==1 || (parms->gpu.wfs && !parms->gpu.evl)){
+		    //in ahst_idealngs==1 mode, wait for perfevl to finish.
 		    //otherwise, wait for GPU tasks to be queued before calling sync
 		    WAIT(group);
 		}
@@ -306,5 +306,5 @@ void maos_sim(){
 	free_simu(simu);
 	global->simu=0;
     }/*seed */
-    printf("%g\n", sqrt(restot/rescount)*1e9);
+    printf("%.2f\n", sqrt(restot/rescount)*1e9);
 }

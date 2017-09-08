@@ -50,6 +50,7 @@ void free_powfs_cfg(POWFS_CFG_T *powfscfg){
 	dfree(powfscfg->llt->oy);
 	dfree(powfscfg->llt->misreg);
 	free(powfscfg->llt);
+	powfscfg->llt=NULL;
     }
     lfree(powfscfg->wfs);
     lfree(powfscfg->wfsind);
@@ -59,6 +60,7 @@ void free_powfs_cfg(POWFS_CFG_T *powfscfg){
     free(powfscfg->neareconfile);
     free(powfscfg->neasimfile);
     free(powfscfg->bkgrndfn);
+    free(powfscfg->qe);
 }
 void free_strarr(char **str, int n){
     if(str){
@@ -220,6 +222,11 @@ INLINE int sum_dblarr(int n, double *a){
     readcfg_##A##arr_n((&A##tmp), npowfs, "powfs."#B);	\
     for(i=0; i<npowfs; i++){					\
 	parms->powfs[i].B = A##tmp[i];/*doesn't need ## in B*/	\
+    }	
+#define READ_POWFS_MAT(A,B)				\
+    readcfg_strarr_nmax((&strtmp), npowfs, "powfs."#B);	\
+    for(i=0; i<npowfs; i++){					\
+	parms->powfs[i].B = readstr_##A##mat(strtmp[i]);/*doesn't need ## in B*/ \
     }								
 #define READ_POWFS_RELAX(A,B)						\
     readcfg_##A##arr_nmax((&A##tmp), npowfs, "powfs."#B);	\
@@ -346,8 +353,10 @@ static void readcfg_powfs(PARMS_T *parms){
     READ_POWFS_RELAX(dbl, zoomgain);
     READ_POWFS_RELAX(int, zoomset);
     READ_POWFS(dbl,hs);
+    READ_POWFS_RELAX(dbl,hc);
     READ_POWFS(dbl,nearecon);
     READ_POWFS(dbl,rne);
+    READ_POWFS_MAT(d,qe);
     READ_POWFS_RELAX(dbl,dx);
     READ_POWFS(dbl,pixtheta);
     READ_POWFS(str,fnllt);
@@ -365,6 +374,7 @@ static void readcfg_powfs(PARMS_T *parms){
     READ_POWFS_RELAX(int,step);
     READ_POWFS_RELAX(dbl,modulate);
     READ_POWFS_RELAX(int,modulpos);
+    READ_POWFS_RELAX(int,modulring);
     READ_POWFS(int,nwfs);
     for(int ipowfs=0; ipowfs<npowfs; ipowfs++){
 	POWFS_CFG_T *powfsi=&parms->powfs[ipowfs];
@@ -636,7 +646,7 @@ static void readcfg_atm(PARMS_T *parms){
     READ_DBL(atm.L0);
     READ_DBL(atm.dx);
     READ_INT(atm.wdrand);
-    READ_INT(atm.fractal);
+    READ_INT(atm.method);
     READ_INT(atm.frozenflow);
     READ_INT(atm.ninit);
     READ_INT(atm.share);
@@ -753,7 +763,7 @@ static void readcfg_evl(PARMS_T *parms){
 	    ramin=ra2;
 	}
     }
-    READ_DBL(evl.dx);
+    READ_DBL(evl.dx); if(parms->evl.dx<=0) parms->evl.dx=parms->atm.dx;
     READ_INT(evl.rmax);
     READ_INT(evl.psfol);
     READ_INT(evl.psfisim);
@@ -997,7 +1007,7 @@ static void readcfg_plot(PARMS_T *parms){
 */
 static void readcfg_dbg(PARMS_T *parms){
     READ_INT(dbg.wamethod);
-    READ_DBL(dbg.atm);
+    READ_DMAT(dbg.atm); if(dsumabs(parms->dbg.atm)==0) {dfree(parms->dbg.atm); parms->dbg.atm=NULL;}
     READ_INT(dbg.mvstlimit);
     READ_INT(dbg.annular_W);
     READ_LMAT(dbg.tomo_maxit);
@@ -1005,7 +1015,6 @@ static void readcfg_dbg(PARMS_T *parms){
     READ_INT(dbg.ecovxx);
     READ_INT(dbg.useopdr);
     READ_INT(dbg.cmpgpu);
-    READ_INT(dbg.pupmask);
     READ_INT(dbg.wfslinearity);
     READ_INT(dbg.nocgwarm);
     if(readcfg_peek("dbg.test")){
@@ -1022,6 +1031,7 @@ static void readcfg_dbg(PARMS_T *parms){
     READ_DBL(dbg.gradoff_scale);
     READ_DMAT(dbg.pwfs_psx);
     READ_DMAT(dbg.pwfs_psy);
+    READ_INT(dbg.pwfs_side);
     READ_DBL(dbg.pwfs_flate); parms->dbg.pwfs_flate/=206265000.;
     READ_DBL(dbg.pwfs_flatv); parms->dbg.pwfs_flatv/=206265000.;
     READ_DBL(dbg.pwfs_pupelong);
@@ -1050,6 +1060,7 @@ static void readcfg_save(PARMS_T *parms){
     READ_INT(save.recon);
     READ_INT(save.mvst);
     READ_INT(save.ncpa);
+    READ_INT(save.fdpcg);
     READ_INT(save.atm);/*Save atmosphere */
     READ_INT(save.run);
     READ_INT(save.opdr);/*reconstructed OPD on XLOC */
@@ -1146,14 +1157,11 @@ static void setup_parms_postproc_sim(PARMS_T *parms){
 	/*if(parms->recon.alg!=0){
 	    error("skysim need MVR");
 	}*/
-	parms->tomo.ahst_idealngs=1;
-	if(parms->tomo.ahst_wt==1){//gradient weighting not available.
-	    /*2013-1-30: ahst_wt=2 is not good. It resulted in higher NGS mode than ahst_wt=3*/
-	    warning("in skycoverage presimulation, ahst_wt need to be 3. Changed\n");
-	    parms->tomo.ahst_wt=3;
+	if(!parms->tomo.ahst_idealngs){
+	    parms->tomo.ahst_idealngs=1;
 	}
 	if(parms->ndm>0 && parms->recon.split!=1){
-	    warning("Can only do skysim in split tomography mode 1. Changed\n");
+	    info2("Can only do skysim in split tomography mode 1. Changed\n");
 	    parms->recon.split=1;
 	}
 	for(int ipowfs=0; ipowfs<parms->npowfs; ipowfs++){
@@ -1162,6 +1170,17 @@ static void setup_parms_postproc_sim(PARMS_T *parms){
 	    }
 	}
 	parms->save.extra=1;
+    }
+    if(parms->tomo.ahst_idealngs){
+	if(parms->sim.fuseint){
+	    info2("Disabling sim.fuseint\n");
+	    parms->sim.fuseint=0;
+	}
+	if(parms->tomo.ahst_wt==1){//gradient weighting not available.
+	    /*2013-1-30: ahst_wt=2 is not good. It resulted in higher NGS mode than ahst_wt=3*/
+	    info2("When tomo.ahst_idealngs=1, ahst_wt need to be 3. Changed\n");
+	    parms->tomo.ahst_wt=3;
+	}
     }
     if(parms->dbg.tomo_maxit->nx){
 	warning("dbg.tomo_maxit is set. Will run in open loop mode\n to repeat the simulations"
@@ -1237,9 +1256,9 @@ static void setup_parms_postproc_sim(PARMS_T *parms){
 	parms->sim.dmproj=1;/*need dmproj */
     }
     if(parms->sim.ahstfocus){
-	if(parms->recon.split!=1 || !parms->sim.mffocus){
-	    parms->sim.ahstfocus=0;
-	    warning("Disable ahstfocus\n");
+	if(parms->recon.split!=1 || !parms->sim.mffocus || parms->ndm==1){
+	    parms->sim.ahstfocus=0;//no need ahstfocus
+	    info("Disable sim.ahstfocus.\n");
 	}
     }
     if(parms->sim.ncpa_calib && !parms->sim.ncpa_ndir){
@@ -1298,6 +1317,9 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	    powfsi->radrot=0;
 	    warning2("powfs%d does not have polar ccd. radrot should be zero. changed\n",ipowfs);
 	}
+	if(powfsi->radgx && !powfsi->radpix){
+	    powfsi->radgx=0;
+	}
 	if(powfsi->llt && !powfsi->radpix && !powfsi->mtchcpl){
 	    powfsi->mtchcpl=1;
 	    warning2("powfs%d has llt, but no polar ccd or mtchrot=1, we need mtchcpl to be 1. changed\n",ipowfs);
@@ -1310,8 +1332,8 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	    if(powfsi->phytypesim2==-1){
 		powfsi->phytypesim2=powfsi->phytypesim;
 	    }
-	    int pixpsay=powfsi->pixpsa;
-	    int pixpsax=powfsi->radpix;
+	    long pixpsay=powfsi->pixpsa;
+	    long pixpsax=powfsi->radpix;
 	    if(!pixpsax) pixpsax=pixpsay;
 	    if(pixpsax*pixpsay<4){
 		powfsi->mtchcr=0;//cannot do constraint.
@@ -1334,6 +1356,18 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	    //Input of modulate is in unit of wvl/D. Convert to radian
 	    powfsi->modulate*=wvlmax/parms->aper.d;
 	}
+	if(parms->powfs[ipowfs].qe){
+	    //Check rne input.
+	    long pixpsay=powfsi->pixpsa;
+	    long pixpsax=powfsi->radpix;
+	    if(!pixpsax) pixpsax=pixpsay;
+	    
+		if(parms->powfs[ipowfs].qe->nx*parms->powfs[ipowfs].qe->ny
+		   !=pixpsax*pixpsay){
+		    error("Input qe [%ldx%ld] does not match subaperture pixel [%ldx%ld]\n.", 
+			  parms->powfs[ipowfs].qe->nx, parms->powfs[ipowfs].qe->ny, pixpsax, pixpsay);
+	    }
+	}
 	if(powfsi->dither && powfsi->phystep!=0){
 	    warning("Dither requrie physical optics mode from the beginning, changed.\n");
 	    powfsi->phystep=0;
@@ -1342,10 +1376,17 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 	    powfsi->phystep=((powfsi->phystep+powfsi->dtrat-1)/powfsi->dtrat)*powfsi->dtrat;
 	}
 
-	if(powfsi->fieldstop>0 && (powfsi->fieldstop>10 || powfsi->fieldstop<1e-4)){
-	    error("powfs%d: fieldstop=%g. probably wrong unit. (arcsec)\n", ipowfs, powfsi->fieldstop);
+	if(powfsi->fieldstop>0){
+	    if(powfsi->fieldstop>10 || powfsi->fieldstop<1e-4){
+		error("powfs%d: fieldstop=%g. probably wrong unit. (arcsec)\n", ipowfs, powfsi->fieldstop);
+	    }
+	    powfsi->fieldstop/=206265.;
+	    if(powfsi->type == 1 && powfsi->fieldstop < powfsi->modulate*2+0.5/206265.){
+		warning("Field stop=%g\" is too small for modulation diameter %g\". Changed.\n",
+			parms->powfs[ipowfs].fieldstop*206265, parms->powfs[ipowfs].modulate*206265*2);
+		parms->powfs[ipowfs].fieldstop=parms->powfs[ipowfs].modulate*2+0.5/206265.;
+	    }
 	}
-	powfsi->fieldstop/=206265.;
 
 	if(powfsi->dither){
 	    parms->dither=1;
@@ -1517,7 +1558,7 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
 		warning("powfs %d: Disabling shifting i0 to center in the presence of NCPA.\n", ipowfs);
 		parms->powfs[ipowfs].mtchstc=0;
 	    }
-	    if((!parms->powfs[ipowfs].usephy || parms->powfs[ipowfs].phytypesim2!=1)
+	    if((!parms->powfs[ipowfs].usephy || parms->powfs[ipowfs].phytypesim2!=1 || parms->powfs[ipowfs].phytype!=1)
 	       && parms->powfs[ipowfs].ncpa_method==2){
 		warning("powfs %d: ncpa_method changed from 2 to 1 in geometric wfs or CoG mode\n", ipowfs);
 		parms->powfs[ipowfs].ncpa_method=1;
@@ -1593,8 +1634,8 @@ static void setup_parms_postproc_wfs(PARMS_T *parms){
     parms->sim.dthi=parms->sim.dtrat_hi*parms->sim.dt;
     if(parms->sim.fcfocus<=0){
 	parms->sim.fcfocus=1./parms->sim.dtlo/10;
-	if(parms->sim.fcfocus<10){
-	    parms->sim.fcfocus=10;
+	if(parms->sim.fcfocus<1){
+	    parms->sim.fcfocus=1;
 	}
     }
     parms->sim.lpfocushi=fc2lp(parms->sim.fcfocus, parms->sim.dthi);
@@ -1818,18 +1859,20 @@ static void setup_parms_postproc_atm(PARMS_T *parms){
 	warning("There is no ground layer\n");
     }
     parms->atm.frozenflow = (parms->atm.frozenflow || parms->sim.closeloop);
-    if(!parms->atm.frozenflow || parms->dbg.atm>0){
+    if(!parms->atm.frozenflow || parms->dbg.atm){
 	parms->atm.r0evolve=0;/*disable r0 evolution*/
     }
-    if(parms->dbg.atm==0){
-	if(parms->atm.fractal){
-	    parms->atm.fun=fractal_screen;
-	}else{
+    if(!parms->dbg.atm){
+	switch(parms->atm.method){
+	case 0:
 	    parms->atm.fun=vonkarman_screen;
+	    break;
+	case 1:
+	    parms->atm.fun=fractal_screen;
+	    break;
+	case 2:
+	    parms->atm.fun=biharmonic_screen;
 	}
-    }else if(parms->dbg.atm==-1){
-	info2("Generating Biharmonic Atmospheric Screen...");
-	parms->atm.fun=biharmonic_screen;
     }else{
 	parms->atm.fun=NULL;
     }
@@ -1878,6 +1921,20 @@ static void setup_parms_postproc_dirs(PARMS_T *parms){
 	error("count=%d, ndir=%d\n", count, ndir);
     }
     dresize(parms->dirs, 3, count);
+    double rmax2=0;
+    for(int ic=0; ic<count; ic++){
+	double x=IND(parms->dirs, 0, ic);
+	double y=IND(parms->dirs, 1, ic);
+	double r2=x*x+y*y;
+	if(r2>rmax2) rmax2=r2;
+    }
+    double fov=2*sqrt(rmax2);
+    if(parms->sim.fov<fov){
+	if(parms->dbg.dmfullfov){
+	    warning("sim.fov=%g is less than actual fov=%g. Changed\n", parms->sim.fov*206265, fov*206265);
+	}
+	parms->sim.fov=fov;
+    }
 }
 /**
    compute minimum size of atm screen to cover all the beam path. same for
@@ -1909,7 +1966,7 @@ static void setup_parms_postproc_atm_size(PARMS_T *parms){
 	if(parms->atm.nx<parms->atm.nxm) parms->atm.nx=parms->atm.nxm;
 	if(parms->atm.ny<parms->atm.nym) parms->atm.ny=parms->atm.nym;
     }
-    if(parms->atm.fractal){/*must be square and 1+power of 2 */
+    if(parms->atm.method==1){/*must be square and 1+power of 2 */
 	int nn=parms->atm.nx>parms->atm.ny?parms->atm.nx:parms->atm.ny;
 	parms->atm.nx=1+nextpow2(nn);
 	parms->atm.ny=parms->atm.nx;
@@ -2033,7 +2090,7 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
 	warning("load.aloc contradicts with fit.square. disable fit.square\n");
 	parms->fit.square=0;
     }
-    if(parms->sim.idealfit==1){
+    if(parms->sim.idealfit){
 	parms->recon.psol=1;
     }else if(!parms->sim.closeloop){
 	parms->recon.psol=0;//open loop does not need psol
@@ -2096,14 +2153,16 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
 	    parms->powfs[ipowfs].wfsr=lnew(1,1);
 	    parms->powfs[ipowfs].wfsr->p[0]=ipowfs;
 	}
-	parms->fit.nfit=1;
-	dresize(parms->fit.thetax, 1, 1);
-	dresize(parms->fit.thetay, 1, 1);
-	dresize(parms->fit.wt, 1, 1);
-	dresize(parms->fit.hs, 1, 1);
-	parms->fit.thetax->p[0]=0;
-	parms->fit.thetay->p[0]=0;
-	parms->fit.wt->p[0]=1;
+	/*
+	  parms->fit.nfit=1;
+	  dresize(parms->fit.thetax, 1, 1);
+	  dresize(parms->fit.thetay, 1, 1);
+	  dresize(parms->fit.wt, 1, 1);
+	  dresize(parms->fit.hs, 1, 1);
+	  parms->fit.thetax->p[0]=0;
+	  parms->fit.thetay->p[0]=0;
+	  parms->fit.wt->p[0]=1;
+	*/
     }else{/*Use same information as wfs. */
 	parms->wfsr = parms->wfs;
 	parms->nwfsr= parms->nwfs;
@@ -2194,7 +2253,7 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
     }
 
 
-    if(parms->recon.split==1 && !parms->sim.closeloop){
+    if(parms->recon.split==1 && !parms->sim.closeloop && parms->ndm>1){
 	warning("ahst split tomography does not have good NGS correction in open loop\n");
     }
     if(parms->recon.split==2 && parms->sim.fuseint==1){
@@ -2342,7 +2401,7 @@ static void setup_parms_postproc_recon(PARMS_T *parms){
    postproc misc parameters.
 */
 static void setup_parms_postproc_misc(PARMS_T *parms, int override){
-    if(!disable_save){
+    if(!disable_save && parms->sim.end>parms->sim.start){
 	/*Remove seeds that are already done. */
 	char fn[80];
 	int iseed=0; 
@@ -2379,13 +2438,15 @@ static void setup_parms_postproc_misc(PARMS_T *parms, int override){
 	    sync(); exit(0);
 	}
     }
-    info2("There are %d valid simulation seeds: ",parms->sim.nseed);
-    for(int i=0; i<parms->sim.nseed; i++){
-	info2(" %ld", parms->sim.seeds->p[i]);
-    }
-    info2("\n");
-    if(parms->sim.nseed>1 && parms->dither){
-	warning("Some of the dither mode updates parameters still persist for different seeds.\n");
+    if(parms->sim.end>parms->sim.start){
+	info2("There are %d valid simulation seeds: ",parms->sim.nseed);
+	for(int i=0; i<parms->sim.nseed; i++){
+	    info2(" %ld", parms->sim.seeds->p[i]);
+	}
+	info2("\n");
+	if(parms->sim.nseed>1 && parms->dither){
+	    warning("Some of the dither mode updates parameters still persist for different seeds.\n");
+	}
     }
     if(parms->save.ngcov>0 && parms->save.gcovp<10){
 	warning("parms->save.gcovp=%d is too small. It may fill your disk!\n",
@@ -2719,7 +2780,7 @@ PARMS_T * setup_parms(const char *mainconf, const char *extraconf, int override)
     free(bin_path);
     free(config_path);
     open_config(mainconf,NULL,0);/*main .conf file. */
-    open_config(extraconf, NULL, 1);
+    open_config(extraconf, NULL,1);
     PARMS_T* parms=mycalloc(1,PARMS_T);
     readcfg_sim(parms);
     readcfg_aper(parms);
@@ -2747,15 +2808,12 @@ PARMS_T * setup_parms(const char *mainconf, const char *extraconf, int override)
       Output all the readed parms to a single file that can be used to reproduce
       the same simulation.
     */
-
     if(disable_save){
 	close_config(NULL);
     }else{
 	char fn[PATH_MAX];
 	snprintf(fn, PATH_MAX, "maos_%s_%ld.conf", HOST, (long)getpid());
 	close_config("%s", fn);
-	remove("maos_recent.conf");
-	mysymlink(fn, "maos_recent.conf");
     }
     /*
       Postprocess the parameters for integrity. The ordering of the following
@@ -2777,6 +2835,18 @@ PARMS_T * setup_parms(const char *mainconf, const char *extraconf, int override)
     setup_parms_postproc_recon(parms);
     setup_parms_postproc_misc(parms, override);
     print_parms(parms);
+
+    if(!disable_save){
+	//Make symlink after simulation runs.
+	char fn[PATH_MAX];
+	snprintf(fn, PATH_MAX, "maos_%s_%ld.conf", HOST, (long)getpid());
+	remove("maos_recent.conf");
+	mysymlink(fn, "maos_recent.conf");
+	
+	remove("run_recent.log");
+	snprintf(fn, PATH_MAX, "run_%s_%ld.log", HOST, (long)getpid());
+	mysymlink(fn, "run_recent.log");
+    }
     return parms;
 }
 /**

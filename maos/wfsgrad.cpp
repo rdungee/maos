@@ -38,22 +38,37 @@
 #else
 #define TIM(A)
 #endif
-
+/**
+   Propagate atm onto WFS subaperture grid, and then to fine lenslet grid.
+ */
 static void wfs_ideal_atm(SIM_T *simu, dmat *opd, int iwfs, double alpha){
     const PARMS_T *parms=simu->parms;
     POWFS_T *powfs=simu->powfs;
     const int ipowfs=parms->wfs[iwfs].powfs;
     const double hs=parms->wfs[iwfs].hs;
-    const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
-    for(int idm=0; idm<parms->ndm; idm++){
-	loc_t *loc=powfs[ipowfs].loc_dm?powfs[ipowfs].loc_dm->p[wfsind+idm*parms->nwfs]:powfs[ipowfs].loc;
-	const double ht = parms->dm[idm].ht+parms->dm[idm].vmisreg;
-	double dispx=ht*parms->wfs[iwfs].thetax;
-	double dispy=ht*parms->wfs[iwfs].thetay;
-	double scale=1.-ht/hs;
-	prop_grid(simu->dmprojsq->p[idm], loc, opd->p, 
-		  alpha, dispx, dispy, scale, 0,
-		  0, 0);
+    const double hc=parms->powfs[ipowfs].hc;
+    if(parms->sim.wfsalias==2 || parms->sim.idealwfs==2){
+	dmat *wfsopd0=dnew(powfs[ipowfs].saloc->nloc, 1);
+	for(int ips=0; ips<parms->atm.nps; ips++){
+	    const double ht=parms->atm.ht->p[ips]-hc;
+	    const double dispx=ht*parms->wfs[iwfs].thetax-simu->atm->p[ips]->vx*simu->dt*simu->isim;
+	    const double dispy=ht*parms->wfs[iwfs].thetay-simu->atm->p[ips]->vy*simu->dt*simu->isim;
+	    const double scale=1-ht/hs;
+	    prop_grid(simu->atm->p[ips], powfs[ipowfs].saloc, wfsopd0->p, 1., dispx, dispy, scale, 1, 0, 0);
+	}
+	prop_nongrid(powfs[ipowfs].saloc, wfsopd0->p, powfs[ipowfs].loc, opd->p, alpha, 0, 0, 1,  0, 0);
+	dfree(wfsopd0);
+    }else{
+	const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
+	for(int idm=0; idm<parms->ndm; idm++){
+	    loc_t *loc=powfs[ipowfs].loc_dm?powfs[ipowfs].loc_dm->p[wfsind+idm*parms->nwfs]:powfs[ipowfs].loc;
+	    const double ht = parms->dm[idm].ht+parms->dm[idm].vmisreg-hc;
+	    double dispx=ht*parms->wfs[iwfs].thetax;
+	    double dispy=ht*parms->wfs[iwfs].thetay;
+	    double scale=1.-ht/hs;
+	    prop_grid(simu->dmprojsq->p[idm], loc, opd->p, 
+		      alpha, dispx, dispy, scale, 0, 0, 0);
+	}
     }
 }
 
@@ -177,7 +192,7 @@ void wfsgrad_iwfs(thread_t *info){
 	    loc_add_ptt(opd->p, ptt, powfs[ipowfs].loc);
 	}
     }
-    if(parms->powfs[ipowfs].skip && parms->tomo.ahst_idealngs){
+    if(parms->powfs[ipowfs].skip && parms->tomo.ahst_idealngs==1){
 	//apply ideal NGS modes to NGS WFS
 	ngsmod2science(opd, powfs[ipowfs].loc, recon->ngsmod, 
 		       parms->wfs[iwfs].thetax, parms->wfs[iwfs].thetay,
@@ -349,7 +364,7 @@ void wfsgrad_iwfs(thread_t *info){
 		    dmat *bkgrnd2i=(bkgrnd2)?bkgrnd2[isa]:NULL;
 		    dmat *bkgrnd2ic=(bkgrnd2c)?bkgrnd2c[isa]:NULL;
 		    addnoise(ints->p[isa], &simu->wfs_rand[iwfs],
-			     bkgrnd, bkgrndc, bkgrnd2i, bkgrnd2ic, rne);
+			     bkgrnd, bkgrndc, bkgrnd2i, bkgrnd2ic, parms->powfs[ipowfs].qe, rne);
 		}
 		if(save_ints){
 		    zfarr_dcell(simu->save->intsny[iwfs], isim/dtrat, ints);
@@ -643,7 +658,7 @@ static void wfsgrad_dither(SIM_T *simu, int iwfs){
    if sim.mffocus==2: We apply a LPF on the average focus from six LGS WFS, and
    then remove this value from all LGS WFS. The differential focus is still
    present and powfs.dfrs need to be set to 1 to handle it in tomography. This
-   is the original focus tracking method.
+   is the original focus tracking method, and is no longer recommended.
 */
 static void wfsgrad_lgsfocus(SIM_T* simu){
     const PARMS_T *parms=simu->parms;
@@ -911,8 +926,10 @@ static void wfsgrad_dither_post(SIM_T *simu){
 		    double mgnew;
 		    //gg0 is output/input of dither dithersig.
 		    if(!pd->gg0){//single gain for all subapertures. For Pyramid WFS
-#if 0 //HIA method.
-			double adj=parms->powfs[ipowfs].dither_gog*mgold*(1-pd->a2me/pd->a2m);
+			double gerr=pd->a2me/pd->a2m;
+#define HIA_G_UPDATE 0
+#if HIA_G_UPDATE //HIA method.
+			double adj=parms->powfs[ipowfs].dither_gog*mgold*(1-gerr);
 			dadds(simu->gradscale->p[iwfs], adj);
 			mgnew=mgold+adj;
 			while(mgnew<0){//prevent negative gain
@@ -921,24 +938,28 @@ static void wfsgrad_dither_post(SIM_T *simu){
 			    mgnew+=-adj;
 			}
 #else
-			double adj=pow(pd->a2me/pd->a2m, -parms->powfs[ipowfs].dither_gog);
+			double adj=pow(gerr, -parms->powfs[ipowfs].dither_gog);
 			dscale(simu->gradscale->p[iwfs], adj);
 			mgnew=mgold*adj;
 #endif
 		    }else{//separate gain for each gradient. For shwfs.
 			dscale(pd->gg0, scale1); //Scale value at end of accumulation
 			for(long ig=0; ig<ng; ig++){
+#if HIA_G_UPDATE
 			    double adj=parms->powfs[ipowfs].dither_gog*mgold*(1.-pd->gg0->p[ig]);
 			    simu->gradscale->p[iwfs]->p[ig]+=adj;
 			    while(simu->gradscale->p[iwfs]->p[ig]<0){
 				adj*=0.5;
 				simu->gradscale->p[iwfs]->p[ig]+=-adj;
 			    }
+#else
+			    simu->gradscale->p[iwfs]->p[ig]*=pow(pd->gg0->p[ig], -parms->powfs[ipowfs].dither_gog);
+#endif
 			}
 			mgnew=dsum(simu->gradscale->p[iwfs])/ng;
 			dzero(pd->gg0);
 		    }
-		    info2("Step %d wfs %d CoG gain adjusted by %g %s.\n", 
+		    info2("Step %5d wfs %d CoG gain adjusted by %g %s.\n", 
 			  simu->isim, iwfs, mgnew, pd->gg0?"on average":"globally");
 		    if(simu->resdither){
 			int ic=(npllacc-1)/(npll);
@@ -958,7 +979,7 @@ static void wfsgrad_dither_post(SIM_T *simu){
 	    if(parms->powfs[ipowfs].phytypesim != parms->powfs[ipowfs].phytypesim2){
 		parms->powfs[ipowfs].phytypesim=parms->powfs[ipowfs].phytypesim2;
 		parms->powfs[ipowfs].phytype=parms->powfs[ipowfs].phytypesim;
-		info2("Step %d: powfs %d changed to %s\n", simu->isim, ipowfs, 
+		info2("Step %5d: powfs %d changed to %s\n", simu->isim, ipowfs, 
 		      parms->powfs[ipowfs].phytypesim==1?"matched filter":"CoG");
 	    }
 	    if(parms->powfs[ipowfs].phytypesim==1){//Matched filter
@@ -1003,7 +1024,7 @@ void wfsgrad_twfs_recon(SIM_T *simu){
     const int itpowfs=parms->itpowfs;
     const int ntstep=(simu->isim-parms->powfs[itpowfs].step+1);
     if(ntstep>0 && ntstep%parms->powfs[itpowfs].dtrat==0){
-	info2("Step %d: TWFS has output with gain %g\n", simu->isim, simu->eptwfs);
+	info2("Step %5d: TWFS has output with gain %g\n", simu->isim, simu->eptwfs);
 	dcell *Rmod=0;
 	//Build radial mode error using closed loop TWFS measurements from this time step.
 	dcellmm(&Rmod, simu->recon->RRtwfs, simu->gradcl, "nn", 1);
@@ -1035,7 +1056,7 @@ void wfsgrad_twfs_recon(SIM_T *simu){
 	    const int ntacc=ntstep/parms->powfs[itpowfs].dtrat;
 	    const int dtrat=parms->recon.psddtrat_twfs;
 	    if(ntacc % dtrat==0){//output
-		info("Step %d: TWFS output psd\n", simu->isim);
+		info("Step %5d: TWFS output psd\n", simu->isim);
 		dmat *ts=dsub(simu->restwfs, 0, 0, ntacc-dtrat, dtrat);
 		dmat *tts=dtrans(ts);dfree(ts);
 		const double dt=parms->sim.dt*parms->powfs[itpowfs].dtrat;	
@@ -1049,7 +1070,7 @@ void wfsgrad_twfs_recon(SIM_T *simu){
 		dcell *coeff=servo_optim(psdol, parms->sim.dt, parms->powfs[itpowfs].dtrat, M_PI*0.25, 0, 1);
 		const double g=0.5;
 		simu->eptwfs=simu->eptwfs*(1-g)+coeff->p[0]->p[0]*g;
-		info2("Step %d New Gain (twfs): %.3f\n", simu->isim, simu->eptwfs);
+		info2("Step %5d New gain (twfs): %.3f\n", simu->isim, simu->eptwfs);
 		dfree(psdol);
 		cellfree(coeff);
 		dfree(psd);
@@ -1067,9 +1088,9 @@ void wfsgrad(SIM_T *simu){
     if(parms->sim.idealfit || parms->sim.evlol) return;
     // call the task in parallel and wait for them to finish. It may be done in CPU or GPU.
     extern int PARALLEL;
-    if(!PARALLEL || parms->tomo.ahst_idealngs || !parms->gpu.wfs){
+    if(!PARALLEL || parms->tomo.ahst_idealngs==1 || !parms->gpu.wfs){
 	CALL_THREAD(simu->wfs_grad_pre, 0);
-    }
+    }//else: already called by sim.c
     CALL_THREAD(simu->wfs_grad_post, 0);
     wfsgrad_dither_post(simu);//must be before wfsgrad_lgsfocus because wfsgrad_lgsfocus runs zoom integrator.
     if(parms->itpowfs!=-1){

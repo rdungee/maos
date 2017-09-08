@@ -81,7 +81,9 @@ __global__ void add_ptt_do(Real *restrict opd, Real (*restrict loc)[2], int n, R
 __global__ void add_ptt_do(Real *restrict opd, Real (*restrict loc)[2], int n, Real *ptt, Real pis, Real tx, Real ty);
 __global__ void add_focus_do(Real *restrict opd, Real (*restrict loc)[2], int n, Real focus);
 __global__ void add_ngsmod_do(Real *restrict opd, Real (*restrict loc)[2], int n, 
-			      Real m0, Real m1, Real m2, Real m3, Real m4, Real focus,
+			      Real ttx, Real tty, 
+			      Real ps1, Real ps2, Real ps3, 
+			      Real astig1, Real astig2, Real focus,
 			      Real thetax, Real thetay, Real scale, Real ht, Real alpha);
 
 __global__ void add_do(Real *vec, Real beta, int n);
@@ -129,8 +131,13 @@ __global__ void corner2center_abs2_atomic_do(Real *restrict out, int noutx, int 
 					     const Comp *restrict in, int ninx, int niny);
 __global__ void fftshift_do(Comp *wvf, const int nx, const int ny);
 __global__ void add_tilt_do(Real *opd, int nx, int ny, Real ox, Real oy, Real dx, Real ttx, Real tty);
-__global__ void cwm_do(Comp *dest, Real *from, int n);
-__global__ void cwm_do(Comp *dest, Comp *from, int n);
+template<typename D,typename F>
+__global__ void cwm_do(D* dest, F* from, long n){
+    for(int i=threadIdx.x+blockIdx.x*blockDim.x; i<n; i+=blockDim.x*gridDim.x){
+	dest[i]*=from[i];
+    }
+}
+
 __global__ void cwm_do(Comp *dest, Comp *from, int lda, int ldb, int nx, int ny);
 __global__ void cwm_do(Comp *dest, Comp *from1, Comp *from2, int lda, int ldb, int nx, int ny);
 __global__ void unwrap_phase_do(Comp *wvf, Real *opd, int *embed, int n, Real wvl);

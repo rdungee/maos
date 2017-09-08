@@ -148,7 +148,7 @@ public:
 	    n__=strlen(fline); snprintf(fline+n__, 4096-n__-1, A);	\
 	    fprintf(stderr,"%s\033[00;00m", fline); })
 
-#define warning_once(A...) ({static int done=0; if(!done){done=1; warning(A);}})
+#define warning_once(A...) ({static int done=0; if(!done){done=1; warning2(A);}})
 #define info_once(A...) ({static int done=0; if(!done){done=1; info2(A);}})
 
 //Stream link
@@ -240,6 +240,12 @@ public:
     static int A=default_val;				\
     static __attribute__((constructor)) void init(){	\
 	READ_ENV_INT(A, 0, 1);				\
+    }
+#define DEF_ENV_FLAG_LOCAL(A, default_val, min_val, max_val)	\
+    static int A=-1;						\
+    if(A==-1){					\
+	A=default_val;				\
+	READ_ENV_INT(A, min_val, max_val);	\
     }
 #endif
 

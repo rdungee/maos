@@ -127,7 +127,8 @@ static dmat* pttr_B(const dmat *B,   /**<The B matrix. */
     return B2;
 }
 /**
-   Generate OTF from the B or tip/tilted removed B matrix.
+   Generate OTF from the B or tip/tilted removed B matrix. Notice that tip/tilt
+   in opdbias is NOT removed.
 */
 static void genotf_do(cmat **otf, long pttr, long notfx, long notfy, 
 		      loc_t *loc, const double *amp, const double *opdbias, double wvl,
@@ -167,19 +168,18 @@ static void genotf_do(cmat **otf, long pttr, long notfx, long notfy,
     for(long jm=0; jm<notfy; jm++){
 	for(long im=0; im<notfx; im++){
 	    long (*jloc)[2]=pval[jm*notfx+im].loc;
-	    double tmp1,tmp2; dcomplex tmp3;
 	    dcomplex tmp=0.;
 	    for(long iloc=0; iloc<pval[jm*notfx+im].n; iloc++){
 		long iloc1=jloc[iloc][0];/*iloc1 is continuous. */
 		long iloc2=jloc[iloc][1];/*iloc2 is not continuous. */
-		tmp1=BPD[iloc1]*IND(BP, iloc2, iloc1);
-		tmp2=BPD[iloc2];
+		double tmp1=BPD[iloc1]*IND(BP, iloc2, iloc1);
+		double tmp2=BPD[iloc2];
 		if(amp){
 		    tmp1*=amp[iloc1];
 		    tmp2*=amp[iloc2];
 		}
 		if(opdbias){
-		    tmp3=cexp(wvk*(opdbias[iloc1]-opdbias[iloc2]));
+		    dcomplex tmp3=cexp(wvk*(opdbias[iloc1]-opdbias[iloc2]));
 		    tmp+=tmp1*tmp2*tmp3;
 		}else{
 		    tmp+=tmp1*tmp2;
@@ -357,23 +357,7 @@ void genotf(cmat **otf,    /**<The otf array for output*/
     }
     
     GENOTF_T data={otf, loc, amp, opdbias, area, thres, wvl, ncompx, ncompy, nsa, pttr, B, pval, isafull, otffull};
-    /*
-    data.otf=otf;
-    data.loc=loc;
-    data.amp=amp;
-    data.opdbias=opdbias;
-    data.area=area;
-    data.thres=thres;
-    data.wvl=wvl;
-    data.ncompx=ncompx;
-    data.ncompy=ncompy;
-    data.nsa=nsa;
-    data.pttr=pttr;
-    data.B=B;
-    data.pval=pval;
-    data.isafull=isafull;
-    data.otffull=otffull;
-    */
+   
     thread_t info[NCPU];
     thread_prep(info, 0, nsa, NCPU, genotf_wrap, &data);
     CALL_THREAD(info, 1);
@@ -450,17 +434,17 @@ dmat *mk2dcov(loc_t *loc, const dmat *amp, double ampthres, const dmat *cov, int
     return cov2d;
 }
 /**
-   shift i0 without wraping into i0x1 (+1) and i0x2 (-1)
+   shift i0 along x or ywithout wraping into i0s1 (+sx/sy) and i0s2 (-sx/sy)
 */
-static void mki0shx(double *i0x1, double *i0x2, const dmat *i0, double scale){
+static void mki0sh(double *i0x1, double *i0x2, const dmat *i0, double scale, long sx, long sy){
     int nx=i0->nx;
     typedef double pcol[nx];
     pcol *i0x1p=(pcol*)i0x1;
     pcol *i0x2p=(pcol*)i0x2;
-    for(int iy=0; iy<i0->ny; iy++){
-	for(int ix=0; ix<i0->nx-1; ix++){
-	    i0x1p[iy][ix+1]=IND(i0,ix,iy)*scale;
-	    i0x2p[iy][ix]=IND(i0,ix+1,iy)*scale;
+    for(int iy=0; iy<i0->ny-sy; iy++){
+	for(int ix=0; ix<i0->nx-sx; ix++){
+	    i0x1p[iy+sy][ix+sx]=IND(i0,ix,iy)*scale;
+	    i0x2p[iy][ix]=IND(i0,ix+sx,iy+sy)*scale;
 	}
     }
 }
@@ -468,6 +452,7 @@ static void mki0shx(double *i0x1, double *i0x2, const dmat *i0, double scale){
 /**
   shift i0 without wraping into i0y1 (+1) and i0y2 (-1)
 */
+/*
 static void mki0shy(double *i0y1, double *i0y2, const dmat *i0, double scale){
     int nx=i0->nx;
     typedef double pcol[nx];
@@ -479,7 +464,7 @@ static void mki0shy(double *i0y1, double *i0y2, const dmat *i0, double scale){
 	    i0y2p[iy][ix]=IND(i0,ix,iy+1)*scale;
 	}
     }
-}
+    }*/
 /**
    Generating matched filter from averaged short exposure images.
 */
@@ -488,6 +473,7 @@ dmat *mtch(dmat **neaout, /**<[out] sanea*/
 	   const dmat *i0, /**<Averaged subaperture image*/
 	   const dmat *gx, /**<derivative of i0 along x*/
 	   const dmat *gy, /**<derivative of i0 along y*/
+	   const dmat *qe, /**<non uniform quantum efficiency (optional)*/
 	   const dmat *dbkgrnd2, /**<background*/
 	   const dmat *dbkgrnd2c, /**<background calibration*/
 	   double bkgrnd,  /**<global background*/
@@ -543,30 +529,31 @@ dmat *mtch(dmat **neaout, /**<[out] sanea*/
     adddbl(PCOL(i0g,2), 1, bkgrnd2, i0n, 1, bkgrnd_res);
     adddbl(PCOL(i0g,2), 1, bkgrnd2c, i0n, -1, 0);/*subtract calibration */
     if(mtchcrx){
-	mki0shx(PCOL(i0g,mtchcrx),PCOL(i0g,mtchcrx+1),i0,kpx);
+	mki0sh(PCOL(i0g,mtchcrx),PCOL(i0g,mtchcrx+1),i0,kpx,1,0);
 	adddbl(PCOL(i0g,mtchcrx),   1, bkgrnd2,  i0n,  1, bkgrnd_res);
 	adddbl(PCOL(i0g,mtchcrx),   1, bkgrnd2c, i0n, -1, 0);
 	adddbl(PCOL(i0g,mtchcrx+1), 1, bkgrnd2,  i0n,  1,bkgrnd_res);
 	adddbl(PCOL(i0g,mtchcrx+1), 1, bkgrnd2c, i0n, -1, 0);
     }
     if(mtchcry){
-	mki0shy(PCOL(i0g,mtchcry),PCOL(i0g,mtchcry+1),i0,kpy);
+	mki0sh(PCOL(i0g,mtchcry),PCOL(i0g,mtchcry+1),i0,kpy,0,1);
 	adddbl(PCOL(i0g,mtchcry),  1, bkgrnd2,  i0n,  1, bkgrnd_res);
 	adddbl(PCOL(i0g,mtchcry),  1, bkgrnd2c, i0n, -1, 0);
 	adddbl(PCOL(i0g,mtchcry+1),1, bkgrnd2,  i0n,  1, bkgrnd_res);
 	adddbl(PCOL(i0g,mtchcry+1),1, bkgrnd2c ,i0n, -1, 0);
     }
 
-    if(bkgrnd2){
-	/*adding rayleigh backscatter poisson noise. */
-	for(int i=0; i<i0n; i++){/*noise weighting. */
-	    wt->p[i]=1./(rne*rne+bkgrnd+i0->p[i]+bkgrnd2[i]);
-	}	
-    }else{
-	for(int i=0; i<i0n; i++){/*noise weighting. */
-	    wt->p[i]=1./(rne*rne+bkgrnd+i0->p[i]);
+    /*adding rayleigh backscatter poisson noise. */
+    double rne2=rne*rne; 
+    for(int i=0; i<i0n; i++){/*noise weighting. */
+	if(i0->p[i]<0){//ignore negative pixels.
+	    wt->p[i]=1./rne2;
+	}else if(qe){
+	    wt->p[i]=qe->p[i]/(rne2/(qe->p[i])+bkgrnd+i0->p[i]+(bkgrnd2?bkgrnd2[i]:0));
+	}else{
+	    wt->p[i]=1./(rne2+bkgrnd+i0->p[i]+(bkgrnd2?bkgrnd2[i]:0));
 	}
-    }
+    }	
 
     dmat *tmp=dpinv(i0g, wt);
     dmat *mtche=0;

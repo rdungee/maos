@@ -174,9 +174,10 @@ static void prop_surf_wfs(thread_t *info){
 	const int ipowfs=parms->wfs[iwfs].powfs;
 	const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
 	const double hs=parms->wfs[iwfs].hs;
-	const double scale=1.-hl/hs;
-	const double displacex=parms->wfs[iwfs].thetax*hl;
-	const double displacey=parms->wfs[iwfs].thetay*hl;
+	const double hc=parms->powfs[ipowfs].hc;
+	const double scale=1.-(hl-hc)/hs;
+	const double displacex=parms->wfs[iwfs].thetax*(hl-hc);
+	const double displacey=parms->wfs[iwfs].thetay*(hl-hc);
 
 	loc_t *locwfs;
 	if(powfs[ipowfs].loc_tel){
@@ -379,7 +380,7 @@ static void setup_recon_HAncpa(RECON_T *recon, const PARMS_T *parms){
 	}
     }
     if(recon->actinterp){
-	warning2("Replacing HA by HA*actinterp");
+	info2("Replacing HA by HA*actinterp");
 	dspcell *HA2=0;
 	dcellmm(&HA2, recon->HA_ncpa, recon->actinterp, "nn", 1);
 	dspcellfree(recon->HA_ncpa);
@@ -617,7 +618,7 @@ void setup_surf(const PARMS_T *parms, APER_T *aper, POWFS_T *powfs, RECON_T *rec
 		const double dispy=parms->evl.thetay->p[ievl]*hl;
 		const double scale=1-hl/parms->evl.hs->p[ievl];
 		prop_nongrid(recon->aloc->p[idm], recon->dm_ncpa->p[idm]->p,
-			     aper->locs, aper->opdadd->p[idm]->p,
+			     aper->locs, aper->opdadd->p[ievl]->p,
 			     1, dispx, dispy, scale, 0, 0);   
 	    }
 	}

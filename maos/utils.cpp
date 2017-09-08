@@ -278,9 +278,10 @@ ARG_T * parse_args(int argc, const char *argv[]){
 	    host=strdup("localhost");
 	}
 	if(scheduler_launch_exe(host, argc, argv)){
-	    warning("Launch locally\n");
 	    if(!locally){
-		error("Unable to launch maos at server %s\n", host);
+		error("Unable to launch maos at server %s.\n", host);
+	    }else{
+		warning("Launch locally without scheduler.\n");
 	    }
 	}else{
 	    exit(EXIT_SUCCESS);
@@ -376,26 +377,26 @@ void apply_fieldstop(dmat *opd, dmat *amp, lmat *embed, long nembed, dmat *field
 void plot_setup(const PARMS_T *parms, const POWFS_T *powfs,
 		const APER_T *aper, const RECON_T *recon){
     if(!parms->plot.setup) return;
-    plotdir("FoV",parms,parms->sim.fov*206265,"fov");/*plot wfs/evaluation direction */
-    plotloc("FoV",parms,recon->ploc,0, "ploc");
-    plotloc("FoV",parms,recon->floc,0, "floc");
+    plotdir("Setup",parms,parms->sim.fov*206265,"fov");/*plot wfs/evaluation direction */
+    plotloc("Setup",parms,recon->ploc,0, "ploc");
+    plotloc("Setup",parms,recon->floc,0, "floc");
     for(int idm=0; idm<parms->ndm; idm++){
 	double ht=parms->dm[idm].ht;
-	plotloc("FoV", parms, recon->aloc->p[idm], ht, "aloc%d", idm);
+	plotloc("Setup", parms, recon->aloc->p[idm], ht, "aloc%d", idm);
     }
     for(int ips=0; ips<recon->npsr; ips++){
 	const double ht=recon->ht->p[ips];
-	plotloc("FoV",parms,recon->xloc->p[ips],ht, "xloc%d",ips);
+	plotloc("Setup",parms,recon->xloc->p[ips],ht, "xloc%d",ips);
     }
-    drawopd("amp",aper->locs,aper->amp1->p,NULL,"Aperture Amplitude Map",
+    drawopd("Setup",aper->locs,aper->amp1->p,NULL,"Aperture Amplitude Map",
 	    "x (m)","y (m)","aper");
     
     for(int ipowfs=0; ipowfs<parms->npowfs; ipowfs++){
-	drawopd("amp", powfs[ipowfs].loc, powfs[ipowfs].amp->p,NULL,
+	drawopd("Setup", powfs[ipowfs].loc, powfs[ipowfs].amp->p,NULL,
 		"WFS Amplitude Map","x (m)","y (m)","powfs %d", ipowfs);
 	if(powfs[ipowfs].amp_tel){
 	    for(int wfsind=0; wfsind<parms->powfs[ipowfs].nwfs; wfsind++){
-		drawopd("amp", powfs[ipowfs].loc, powfs[ipowfs].amp_tel->p[wfsind]->p,NULL,
+		drawopd("Setup", powfs[ipowfs].loc, powfs[ipowfs].amp_tel->p[wfsind]->p,NULL,
 			"WFS Amplitude Map","x (m)","y (m)","powfs %d tel2wfs", ipowfs);
 	    }
 	}
@@ -765,7 +766,7 @@ void maxapriori(double *g, const dmat *ints, const PARMS_T *parms,
     ccell *fotf=intstat->fotf->p[intstat->nsepsf>1?wfsind:0];
     mapdata_t data={parms, powfs, ints, fotf, NULL, bkgrnd, rne, noisy, iwfs, isa};
     //info2("isa %d: %.4e %.4e %.2f", isa, g[0], g[1], g[2]);
-    int ncall=dminsearch(g, 3, MIN(pixthetax, pixthetay)*1e-2, (dminsearch_fun)mapfun, &data);
+    int ncall=dminsearch(g, 3, MIN(pixthetax, pixthetay)*1e-2, 5000, (dminsearch_fun)mapfun, &data);
     ccellfree(data.otf);
     /* convert to native format along x/y or r/a to check for overflow*/
     if(parms->powfs[ipowfs].radpix && !parms->powfs[ipowfs].radrot){
@@ -854,9 +855,10 @@ void calc_phygrads(dmat **pgrad, dmat *ints[], const PARMS_T *parms, const POWFS
     const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
     dmat **mtche=NULL;
     double *i0sum=NULL;
+    double i0sumg=0;
     if(phytype==1){
-	    mtche=powfs[ipowfs].intstat->mtche->p;
-	    i0sum=powfs[ipowfs].intstat->i0sum->p;
+	mtche=powfs[ipowfs].intstat->mtche->p;
+	i0sum=powfs[ipowfs].intstat->i0sum->p;
 	if(powfs[ipowfs].intstat->mtche->ny>1){
 	    mtche+=nsa*wfsind;
 	    i0sum+=nsa*wfsind;
@@ -871,21 +873,17 @@ void calc_phygrads(dmat **pgrad, dmat *ints[], const PARMS_T *parms, const POWFS
     }
     double *pgradx=(*pgrad)->p;
     double *pgrady=pgradx+nsa;
-    double scaleg=1;
+    double i1sum=0;
     if(parms->powfs[ipowfs].sigmatch==2){
-	double i0sumg=0;
-	double i1sumg=0;
 	for(int isa=0; isa<nsa; isa++){
-	    i0sumg+=i0sum[isa];
-	    i1sumg+=dsum(ints[isa]);
+	    i1sum+=dsum(ints[isa]);
 	}
-	scaleg=i0sumg/i1sumg;
     }
+
     for(int isa=0; isa<nsa; isa++){
 	double geach[3]={0,0,1};
 	switch(phytype){
 	case 1:{//matched filter
-	    dmulvec(geach, mtche[isa],ints[isa]->p,1.);
 	    double scale=1.;
 	    switch(parms->powfs[ipowfs].sigmatch){
 	    case 0://no normalization
@@ -894,24 +892,22 @@ void calc_phygrads(dmat **pgrad, dmat *ints[], const PARMS_T *parms, const POWFS
 		scale=i0sum[isa]/dsum(ints[isa]);
 		break;
 	    case 2://match globally.
-		scale=scaleg;
+		scale=i0sumg/i1sum;
 		break;
 	    }
-	    geach[0]*=scale;
-	    geach[1]*=scale;
+	    dmulvec(geach, mtche[isa],ints[isa]->p,scale);
 	}
 	    break;
 	case 2:{//CoG
 	    double sumi=0;
 	    switch(parms->powfs[ipowfs].sigmatch){
-	    case 0://normalization use nominal intensity (linear model)
-		sumi=i0sum[isa];
+	    case 0://normalization use model intensity (linear model)
+		sumi=powfs[ipowfs].saa->p[isa]*parms->powfs[ipowfs].siglev;
 		break;
 	    case 1://normalization use current intensity (non-linear)
 		break;
 	    case 2://normalized use scaled current intensity (non-linear)
-		sumi=i0sum[isa]/scaleg;
-		error("To implement\n");
+		sumi=powfs[ipowfs].saa->p[isa]*i1sum/powfs[ipowfs].saasum;
 		break;
 	    }
 	    dcog(geach,ints[isa],0.,0.,
@@ -929,7 +925,7 @@ void calc_phygrads(dmat **pgrad, dmat *ints[], const PARMS_T *parms, const POWFS
 	    }
 	}
 	    break;
-	case 3:{
+	case 3:{//This algorithm is not very useful.
 	    geach[0]=pgradx[isa];//warm restart
 	    geach[1]=pgrady[isa];
 	    maxapriori(geach, ints[isa], parms, powfs, iwfs, isa, 1, bkgrnd, rne);

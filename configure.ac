@@ -312,6 +312,10 @@ CXXFLAGS+=" -I${PRE_DIR}/include "
 DOWNLOAD_DIR="${TMP_DIR}/downloads"
 OPTS+=" $CXXFLAGS_EXTRA "
 
+if test "$system" = "win" ;then
+    LDFLAGS+=" -Wl,-rpath,${PREDIR}/bin"
+fi
+
 if test "$host_cpu" = "x86_64" ;then
     CXXFLAGS+=" -DDLONG "
     CFLAGS+=" -DDLONG "
@@ -448,7 +452,7 @@ compile(){
 function set_lapack(){
     type=$1
     case $type in
-	*mkl*)
+	mkl)
 	    if test "$type" = "mkl-download" -a "$mkl_avail" = "yes";then
 		download MKL "mkl${libsuffix}.tar.bz2" ${PRE_DIR}
 	    fi
@@ -462,11 +466,11 @@ function set_lapack(){
 	    LAPACK+=" -lmkl_core"
 	    if test -n "$OPENMP_CXXFLAGS" ;then
 		if test "$CN" = "ICC" ;then
-		    LAPACK+=" -lmkl_intel_thread"
+		    LAPACK+=" -lmkl_intel_thread $OPENMP_CFLAGS"
 		elif test "$CN" = "GCC" ;then
-		    LAPACK+=" -lmkl_gnu_thread"
+		    LAPACK+=" -lmkl_gnu_thread $OPENMP_CFLAGS"
 		else
-		    LAPACK+=" -lmkl_intel_thread"
+		    LAPACK+=" -lmkl_intel_thread $OPENMP_CFLAGS"
 		fi
 	    else
 		LAPACK+=" -lmkl_intel_thread -liomp5"
@@ -477,10 +481,19 @@ function set_lapack(){
 		LAPACK=${LAPACK// /,}
 	    fi
 	    ;;
-	*pkg-config*)
+	pkg-config)
 	    LAPACK=`pkg-config --libs blas lapack 2>/dev/null`
 	    ;;
-	*default*)
+	openblas-openmp)
+	    LAPACK="-lopenblaso"
+	    ;;
+	openblas-threads)
+	    LAPACK="-lopenblasp"
+	    ;;
+	openblas)
+	    LAPACK="-lopenblas"
+	    ;;
+	default*)
 	    LAPACK="-llapack -lblas "
 	    if test "$type" = "default-link" ;then
 	       if test -d $/usr/lib${libsuffix} ;then
@@ -509,15 +522,16 @@ function set_lapack(){
     echo trying LAPACK=$LAPACK
 }
 has_lapack=no
+base_lapack="pkg-config openblas-openmp openblas-threads openblas default default-link"
 case $use_mkl in
     yes) #prefer MKL
-	trys="mkl mkl-download pkg-config default default-link"
+	trys="mkl mkl-download $base_lapack"
 	;;
     no) #disable MKL
-	trys="pkg-config default default-link"
+	trys="$base_lapack"
 	;;
     default) #default order
-	trys="mkl pkg-config default default-link mkl-download"
+	trys="mkl $base_lapack mkl-download"
 	;;
 esac
 
@@ -546,48 +560,56 @@ if test "$has_z" = "no" ;then
     AC_CHECK_LIB([z],[gzopen],[],[AC_MSG_ERROR([Invalid zlib])])
 fi
 
-#Check for FFTW3 header and library.
-AC_CHECK_LIB([fftw3], [fftw_execute],[has_fftw="yes"],[has_fftw='no'])
-#AC_CHECK_HEADERS([fftw3.h],[], [has_fftw='no'])
-if test "$has_fftw" = "no" ;then #fftw does not exist in system.
-    FFTW_FLAGS="--enable-threads --enable-shared --enable-static"
-    if test -n "$OPENMP_FLAGS" ;then
-        FFTW_FLAGS+=" --enable-openmp"
-    fi
-    compile FFTW fftw.tar.bz2 $FFTW_FLAGS
-    #compile FFTW fftw.tar.bz2 --enable-float 
-    unset ac_cv_lib_fftw3_fftw_execute
-    AC_CHECK_LIB([fftw3], [fftw_execute],[],[AC_MSG_ERROR([Invalid FFTW library])])
-fi
 
-if test "$with_matlab" != "no" ;then
-    #cannot compile with single precision floating fft when compiling mex routines
-    has_fftwf=0
+#Check for FFTW interface in MKL
+AC_CHECK_LIB([m], [fftw_execute], [builtin_fftw="no"], [builtin_fftw="no"], [$LAPACK -lm])
+if test "$builtin_fftw" = "yes";then
+    AC_MSG_NOTICE([FFTW is already provided by $LAPACK])
+    fftw_threads=1
 else
-    AC_CHECK_LIB([fftw3f], [fftwf_execute],[has_fftwf=1],[has_fftwf=0])
-fi
-AC_DEFINE_UNQUOTED(HAS_FFTWF, [$has_fftwf], "FFTW single precision exists")
-if test x$has_fftwf = x1 ;then
-    LDFFT="-lfftw3 -lfftw3f"
-else
-    LDFFT="-lfftw3"
-fi
-fftw_threads=1
-if test "$with_matlab" = "no"  ;then
-    if test -n "$OPENMP_CXXFLAGS" ;then
-	AC_CHECK_LIB([fftw3_omp], [fftw_init_threads], [LDFFT+=" -lfftw3_omp"], [fftw_threads=0], [-lfftw3 $OPENMP_CXXFLAGS])
-    else
-	AC_CHECK_LIB([fftw3_threads], [fftw_init_threads], [LDFFT+=" -lfftw3_threads"], [fftw_threads=0], [-lfftw3 -lpthread])
-    fi
-    if test x$has_fftwf = x1 ;then
-	if test -n "$OPENMP_CXXFLAGS" ;then
-	    AC_CHECK_LIB([fftw3f_omp], [fftwf_init_threads], [LDFFT+=" -lfftw3f_omp"], [fftw_threads=0], [-lfftw3f $OPENMP_CXXFLAGS])
-	else
-	    AC_CHECK_LIB([fftw3f_threads], [fftwf_init_threads], [LDFFT+=" -lfftw3f_threads"], [fftw_threads=0], [-lfftw3f -lpthread])
+    #Check for FFTW3 header and library.
+    AC_CHECK_LIB([fftw3], [fftw_execute],[has_fftw="yes"],[has_fftw='no'])
+    AC_CHECK_HEADERS([fftw3.h],[], [has_fftw='no'])
+    if test "$has_fftw" = "no" ;then #fftw does not exist in system.
+	FLAGS="--enable-threads --enable-shared --enable-static"
+	if test -n "$OPENMP_CFLAGS" ;then
+            FLAGS+=" --enable-openmp"
 	fi
+	compile FFTW fftw.tar.bz2 $FLAGS
+	#compile FFTW fftw.tar.bz2 --enable-float 
+	unset ac_cv_lib_fftw3_fftw_execute
+	AC_CHECK_LIB([fftw3], [fftw_execute],[],[AC_MSG_ERROR([Invalid FFTW library])])
     fi
-else
-    fftw_threads=0
+
+    if test "$with_matlab" != "no" ;then
+	#cannot compile with single precision floating fft when compiling mex routines
+	has_fftwf=0
+    else
+	AC_CHECK_LIB([fftw3f], [fftwf_execute],[has_fftwf=1],[has_fftwf=0])
+    fi
+    AC_DEFINE_UNQUOTED(HAS_FFTWF, [$has_fftwf], "FFTW single precision exists")
+    if test x$has_fftwf = x1 ;then
+	LDFFT="-lfftw3 -lfftw3f"
+    else
+	LDFFT="-lfftw3"
+    fi
+    fftw_threads=1
+    if test "$with_matlab" = "no"  ;then
+	if test -n "$OPENMP_CFLAGS" ;then
+	    AC_CHECK_LIB([fftw3_omp], [fftw_init_threads], [LDFFT+=" -lfftw3_omp"], [fftw_threads=0], [-lfftw3 $OPENMP_CXXFLAGS])
+	else
+	    AC_CHECK_LIB([fftw3_threads], [fftw_init_threads], [LDFFT+=" -lfftw3_threads"], [fftw_threads=0], [-lfftw3 -lpthread])
+	fi
+	if test x$has_fftwf = x1 ;then
+	    if test -n "$OPENMP_CFLAGS" ;then
+		AC_CHECK_LIB([fftw3f_omp], [fftwf_init_threads], [LDFFT+=" -lfftw3f_omp"], [fftw_threads=0], [-lfftw3f $OPENMP_CFLAGS])
+	    else
+		AC_CHECK_LIB([fftw3f_threads], [fftwf_init_threads], [LDFFT+=" -lfftw3f_threads"], [fftw_threads=0], [-lfftw3f -lpthread])
+	    fi
+	fi
+    else
+	fftw_threads=0
+    fi
 fi
 AC_DEFINE_UNQUOTED(BUILTIN_FFTW_THREADS, [$fftw_threads], "Built-in FFTW3 threads support.")
 
@@ -608,7 +630,7 @@ if test "$use_websockets" = "yes" ;then
     AC_CHECK_HEADERS([libwebsockets.h], [], [has_lws="no"])
 
     if test "$has_lws" = "no" ;then #first try to compile from source. Needs cmake
-	compile LIBWEBSOCKETS libwebsockets.tar.bz2 -DLIB_SUFFIX=${libsuffix} -DLWS_WITH_SSL=OFF -DLWS_IPV6=OFF -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITHOUT_DAEMONIZE=ON -DLWS_WITHOUT_CLIENT=ON 
+	compile LIBWEBSOCKETS libwebsockets.tar.bz2 -DLIB_SUFFIX=${libsuffix} -DLWS_WITH_SSL=OFF -DLWS_IPV6=OFF -DLWS_WITHOUT_TESTAPPS=ON -DLWS_WITHOUT_DAEMONIZE=ON -DLWS_WITHOUT_CLIENT=ON -DLWS_WITH_SHARED=OFF -DLWS_WITH_STATIC=ON
 	unset ac_cv_lib_websockets_lws_service
 	AC_CHECK_LIB([websockets], [lws_service], [has_lws="yes"], [has_lws="no"], [])
     fi
@@ -809,6 +831,8 @@ if test "$with_cuda" != "no" ;then
 	CUDA_L="${CUDADIR}/lib${libsuffix}"
     elif test -f "${CUDADIR}/lib/libcudart.$ldsuffix" ;then
 	CUDA_L="${CUDADIR}/lib"
+    elif test -f "${CUDADIR}/lib/x64/cudart.lib" ;then
+    	CUDA_L="${CUDADIR}/lib/x64"
     else
 	CUDA_L=""
     fi
@@ -856,13 +880,25 @@ if test "$with_cuda" != "no" ;then
 	AC_MSG_ERROR([Require at least CUDA toolkit 4.0 ])
     fi
     if test "$cudaver" -ge 40 ;then
-	CUDAOPT+=" -gencode arch=compute_20,code=sm_20"
+	CUDAOPT+=" -gencode arch=compute_20,code=compute_20" #Fermi
     fi
     if test "$cudaver" -ge 42 ;then
-	CUDAOPT+=" -gencode arch=compute_30,code=sm_30"
+	CUDAOPT+=" -gencode arch=compute_30,code=compute_30" #Kepler. Introduced unified memory
     fi
     if test "$cudaver" -ge 65 ;then
-        CUDAOPT="$CUDAOPT -gencode arch=compute_52,code=sm_52"
+        CUDAOPT+=" -gencode arch=compute_50,code=compute_50" #Maxwell
+    fi
+    if test "$cudaver" -ge 80 ;then
+	CUDAOPT+=" -gencode arch=compute_60,code=compute_60" #Pascal. UM transparent migration.
+    fi
+    if test "$cudaver" -ge 90 ;then
+	CUDAOPT+=" -gencode arch=compute_70,code=compute_70" #Volta. UM access counter. ATS over NVlink. Cooperative Groups.
+    fi
+    if test "$cudaver" -ge 100 ;then
+	CUDAOPT+=" -gencode arch=compute_80,code=compute_80" #?
+    fi
+    if test "$cudaver" -ge 1100 ;then
+	CUDAOPT+=" -gencode arch=compute_90,code=compute_90" #?
     fi
     #if test -n "$OPENMP_CXXFLAGS";then
     #    CUDAOPT="$CUDAOPT -Xcompiler $OPENMP_CXXFLAGS"
@@ -975,7 +1011,7 @@ echo CXXFLAGS=$CXXFLAGS
 echo LDFLAGS=$LDFLAGS
 echo OPTS=$OPTS
 echo LDOPTS=$LDOPTS
-
+echo LDEXE_FULL=$LDEXE_FULL
 if test "$with_gtk" != "no" ;then
     echo Compile Drawdaemon=$comp_draw
     echo Compile Monitor=$comp_mon

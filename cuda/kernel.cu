@@ -67,7 +67,9 @@ __global__ void add_focus_do(Real *restrict opd, Real (*restrict loc)[2],
     }
 }
 __global__ void add_ngsmod_do(Real *restrict opd, Real (*restrict loc)[2], int n, 
-			      Real m0, Real m1, Real m2, Real m3, Real m4, Real focus,
+			      Real ttx, Real tty, 
+			      Real ps1, Real ps2, Real ps3, 
+			      Real astig1, Real astig2, Real focus,
 			      Real thetax, Real thetay, Real scale, Real ht, Real alpha
 			      ){
     const Real scale1=1.f-scale;
@@ -78,15 +80,16 @@ __global__ void add_ngsmod_do(Real *restrict opd, Real (*restrict loc)[2], int n
 	Real xy=x*y;
 	Real x2=x*x;
 	Real y2=y*y;
-	opd[i]+= alpha*(+x*m0
-			+y*m1
+	opd[i]+= alpha*(+x*ttx
+			+y*tty
 			+focus*(x2+y2)
-			+m2*(-2*scale*ht*(thetax*x+thetay*y))
-			+m3*((x2-y2)*scale1 - 2*scale*ht*(thetax*x-thetay*y))
-			+m4*(xy*scale1-scale*ht*(thetay*x+thetax*y)));
+			+ps1*(-2*scale*ht*(thetax*x+thetay*y))
+			+ps2*((x2-y2)*scale1 - 2*scale*ht*(thetax*x-thetay*y))
+			+ps3*(xy*scale1-scale*ht*(thetay*x+thetax*y))
+			+astig1*(x2-y2)
+			+astig2*(xy));
     }
 }
-
 /**
    add a vector to another, scaled by alpha and beta. all in device memory.
    a=a*alpha+b*beta;
@@ -157,7 +160,9 @@ __global__ void sum_do(Real *restrict res, const Real *a, const int n){
     }
 }
 /*
-  In each block, we first do the reduction in each warp. This avoid syncthreads and if test. Then we copy results from each wrap to the first wrap and do the reduction again.
+  In each block, we first do the reduction in each warp. This avoid syncthreads
+  and if test. Then we copy results from each wrap to the first wrap and do the
+  reduction again.
 */
 __global__ void sum2_do(Real *restrict res, const Real *a, const int n){
     __shared__ Real sb[REDUCE_WRAP*REDUCE_STRIDE];
@@ -402,18 +407,12 @@ __global__ void add_tilt_do(Real *opd, int nx, int ny, Real ox, Real oy, Real dx
 /**
    component wise multiply.
 */
-__global__ void cwm_do(Comp *dest, Real *from, int n){
+
+template <>
+__global__ void cwm_do(Comp *dest, Real *from,long n){
     for(int i=threadIdx.x+blockIdx.x*blockDim.x; i<n; i+=blockDim.x*gridDim.x){
 	dest[i].x*=from[i];
 	dest[i].y*=from[i];
-    }
-}
-/**
-   component wise multiply.
-*/
-__global__ void cwm_do(Comp *dest, Comp *from, int n){
-    for(int i=threadIdx.x+blockIdx.x*blockDim.x; i<n; i+=blockDim.x*gridDim.x){
-	dest[i]*=from[i];
     }
 }
 

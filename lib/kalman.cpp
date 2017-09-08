@@ -23,7 +23,7 @@ typedef struct{
     dmat *freq;
     dmat *psdcov_in;
     dmat *psdcov_sde;
-    double diffscale;
+    double norm_in;
     int count;
     int ncoeff;
     int nmod;
@@ -33,22 +33,25 @@ typedef struct{
    Do FFT to convert PSD to Covariance
  */
 static void psd2cov(dmat *psd, double df){
-    dfft1plan_r2hc(psd, -1);
     dscale(psd, df);
     psd->p[0]=0;//zero dc. critical
+    dfft1plan_r2hc(psd, -1);
     dfft1(psd, -1);
 }
 /**
    Computes PSD of SDE with coefficients (coeff) and frequency (f)
  */
-static void sde_psd(dmat **psd, const dmat *f, const double *coeff, int ncoeff, int nmod){
+void sde_psd(dmat **psd, const dmat *f, const double *coeff, int ncoeff, int nmod){
     int order=ncoeff-1;
-    if(!psd){
+    if(!*psd){
 	*psd=dnew(f->nx,1);
-    }else if(order!=2){
+    }else{
 	dzero(*psd);
     }
     dmat *ppsd=*psd;
+    if(ppsd->nx != f->nx){
+	warning("f and psd does not match\n");
+    }
     if(order==2){//special version for order 2. faster.
 	double twopi=2*M_PI;
 	for(int im=0; im<nmod; im++){
@@ -57,13 +60,13 @@ static void sde_psd(dmat **psd, const dmat *f, const double *coeff, int ncoeff, 
 	    double sigma2=pow(coeff[2+im*3],2);
 	    double *pp;
 	    if(ppsd->ny==nmod){//seperate
-		pp=ppsd->p+im*f->nx;
+		pp=ppsd->p+im*ppsd->nx;
 	    }else{
 		pp=ppsd->p;
 	    }
 	    for(int is=0; is<f->nx; is++){
 		double omega2=pow(f->p[is]*twopi, 2);
-		pp[is]=sigma2/(pow(omega2-c2, 2)+c1sq*omega2);
+		pp[is]+=sigma2/(pow(omega2-c2, 2)+c1sq*omega2);//2017-07-21: was =
 	    }
 	}
     }else{
@@ -78,7 +81,7 @@ static void sde_psd(dmat **psd, const dmat *f, const double *coeff, int ncoeff, 
 		denom+=coeff[order-1+im*ncoeff];
 		double val=pow(coeff[order+im*ncoeff],2)/cabs2(denom);
 		if(ppsd->ny==nmod){//seperate
-		    ppsd->p[is+im*f->nx]=val;
+		    IND(ppsd, is, im)+=val;
 		}else{
 		    ppsd->p[is]+=val;
 		}
@@ -95,8 +98,18 @@ static double coeff_isbad(const double *coeff, int ncoeff){
     return 0;
 }
 /**
-   returns the difference in psd
+
+   Compute the difference between the input PSD and SDE PSD, or the covariance of ncov>0.
+
+   2007-07-20: Updated the routine for robustness
+   
+   We no longer require the total variance to be preserved to be more flexible during fitting.
+   
+   It is better to fit covariance than PSD because what the LQG
+   cares is how the variable involves with time within the next time
+   steps. Covariance describes this better than the PSD.
 */
+
 static double sde_diff(const double *coeff, void *pdata){
     sde_fit_t *data=(sde_fit_t*)pdata;
     double check;
@@ -106,27 +119,49 @@ static double sde_diff(const double *coeff, void *pdata){
 	diff=(check)*10+10;
     }else{
 	sde_psd(&data->psdcov_sde, data->freq, coeff, data->ncoeff, data->nmod);
-	if(!data->ncov){
+	if(!data->ncov){//PSD fitting
 	    dadd(&data->psdcov_sde, 1, data->psdcov_in, -1);
 	    /*Must use dnorm here. dsumabs does not work well for peaks when
 	     * initial guess of c1 is not close.*/
-	    diff=dnorm(data->psdcov_sde);
-	}else{
+	    diff=dnorm(data->psdcov_sde)/data->norm_in;
+	}else{//Covariance fitting.
+	    /*if(data->count<20 || data->count%100==0){
+		writebin(data->psdcov_sde, "sde_psd_%04d", data->count);
+		}*/
 	    psd2cov(data->psdcov_sde, data->df);
+	    /*if(data->count<20 || data->count%100==0){
+		writebin(data->psdcov_sde, "sde_cov_%04d", data->count);
+		}*/
 	    diff=0;
-	    double scale1=1./(data->psdcov_in->p[0]);
-	    double scale2=1./(data->psdcov_sde->p[0]);
+#define METHOD 1
+#if METHOD==1
 	    for(long i=0; i<data->ncov; i++){
-		double val1=data->psdcov_in->p[i]*scale2;
-		double val2=data->psdcov_sde->p[i]*scale1;
-		diff+=fabs(val1-val2);
+		double val1=data->psdcov_in->p[i];
+		double val2=data->psdcov_sde->p[i];
+		diff+=pow(val1-val2,2);
 	    }
+	    diff=diff/((abs2(data->psdcov_in->p[0]+data->psdcov_sde->p[0]))*data->ncov);
+#elif METHOD==2
+	    double scale=data->psdcov_in->p[0]/data->psdcov_sde->p[0];
+	     for(long i=0; i<data->ncov; i++){
+		double val1=data->psdcov_in->p[i];
+		double val2=data->psdcov_sde->p[i];
+		diff+=pow(val1-val2*scale,2);
+	    }
+	     diff+=abs2(data->psdcov_in->p[0]-data->psdcov_sde->p[0])*data->ncov;
+	     diff=diff/((abs2(data->psdcov_in->p[0]))*data->ncov);
+#endif
 	}
     }
-    diff*=data->diffscale;
     if(!isfinite(diff)){
 	error("Diff is not finite\n");
     }
+    /*info2("coeff=");
+    for(int imod=0; imod<data->nmod; imod++){
+	info2("[%g %.2f %g] ", coeff[3*imod], coeff[3*imod+1], coeff[3*imod+2]);
+    }
+    info2("ncov=%d. cov0=[%g, %g] diff=%g. count=%d\n", data->ncov, data->psdcov_in->p[0], data->psdcov_sde->p[0], diff, data->count);
+    */
     return diff;
 }
 /**
@@ -142,7 +177,9 @@ static void sde_scale_coeff(dmat *coeff, double var_in, dmat *psdcov_sde, const 
     sde_psd(&psdcov_sde, freq, coeff->p, coeff->nx, coeff->ny);
     double var_sde;
     if(ncov){
+	//writebin(psdcov_sde, "sde_psd");
 	psd2cov(psdcov_sde, freq->p[2]-freq->p[1]);
+	//writebin(psdcov_sde, "sde_cov");
 	var_sde=psdcov_sde->p[0];
     }else{
 	var_sde=dtrapz(freq, psdcov_sde);
@@ -164,13 +201,14 @@ static dmat* sde_fit_do(const dmat *psdin, const dmat *coeff0, double tmax_fit){
     dmat *freq=0, *psdcov_in=0, *psdcov_sde=0;
     int ncov=0;
     double var_in=0;//strength of input
-    double diffscale;//scale the diff
     /* 2014-07-31: Always upsample the PSD to 0.01 Hz sampling. Otherwise SDE
        PSD may have unresolved peaks, causing fitting to misbehave.
     */
     double maxf=psdin->p[psdin->nx-1];
+    double norm_in;
     if(tmax_fit>0){//Use covariance fit
-	//Create Frequency vector
+	/* Create Frequency vector with proper fft indexing [0:1:nf/2-1 * nf/2:-1:1]. 
+	   Negative index is mapped to positive. */
 	long nf=round(maxf/df)*2;
 	ncov=MIN(round(tmax_fit*maxf), nf/2);
 	freq=dnew(nf, 1);
@@ -178,52 +216,52 @@ static dmat* sde_fit_do(const dmat *psdin, const dmat *coeff0, double tmax_fit){
 	    freq->p[i]=df*i;
 	    freq->p[i+nf/2]=df*(nf/2-i);
 	}
-	psdcov_in=psdinterp1(psdin, freq, 1);
+	psdcov_in=psdinterp1(psdin, freq, 0);
+	
+	//writebin(psdcov_in, "in_psd");
 	psd2cov(psdcov_in, df);
 	var_in=psdcov_in->p[0];
-	dmat *cov_in2=dnew_ref(ncov, 1, psdcov_in->p);
-	diffscale=cov_in2->p[0]/dsumabs(cov_in2);
-	dfree(cov_in2);
-
 	if(!isfinite(psdcov_in->p[0])){
 	    warning("covariance is not finite at 0\n");
 	    writebin(psdcov_in, "bad_cov");
 	}
+	//writebin(psdcov_in, "in_cov");
 	psdcov_sde=dnew(nf, 1);
+	norm_in=ncov*abs2(psdcov_in->p[0]);
     }else{//Use PSD fit
-	if(psdin->p[1]-psdin->p[0]<df*2){
+	if((psdin->p[1]-psdin->p[0])<df*2){
 	    freq=drefcols(psdin, 0, 1);
 	    psdcov_in=drefcols(psdin, 1, 1);
-	}else{
+	}else{//Resampling.
 	    double minf=psdin->p[0];
 	    long nf=round((maxf-minf)/df);
 	    freq=dnew(nf, 1);
 	    for(long i=0; i<nf; i++){
 		freq->p[i]=minf+df*i;
 	    }
-	    psdcov_in=psdinterp1(psdin, freq, 1);
+	    psdcov_in=psdinterp1(psdin, freq, 0);
 	}
 	psdcov_sde=dnew(freq->nx, 1);
 	var_in=dtrapz(freq, psdcov_in);
-	diffscale=1./dsumabs(psdcov_in);
+	norm_in=dnorm(psdcov_in);
     }
     int ncoeff=coeff0->nx;
     int nmod=coeff0->ny;
     dmat *coeff=dnew(ncoeff, nmod);dcp(&coeff, coeff0);
-    if(coeff->p[2]<=0){
-	sde_scale_coeff(coeff, var_in, psdcov_sde, freq, tmax_fit>0?1:0);
-    }
-    
-    sde_fit_t data={df, freq, psdcov_in, psdcov_sde, diffscale, 0, ncoeff, nmod, ncov};
-    double diff0=sde_diff(coeff->p, &data);
-    double tol=1e-10;
-    dminsearch(coeff->p, ncoeff*nmod, tol, sde_diff, &data);
     //Scale to make sure total energy is preserved.
     sde_scale_coeff(coeff, var_in, psdcov_sde, freq, ncov);
 
+    sde_fit_t data={df, freq, psdcov_in, psdcov_sde, norm_in, 0, ncoeff, nmod, ncov};
+    double diff0=sde_diff(coeff->p, &data);
+    double tol=1e-10;
+    int nmax=2000;
+    dminsearch(coeff->p, ncoeff*nmod, tol, nmax, sde_diff, &data);
+    //Do not scale coeff after the solution.
     double diff1=sde_diff(coeff->p, &data);
-    info2("sde_fit: %d interations: %g->%g. ", data.count, diff0, diff1);
-    if(diff1>0.2 && diff1>diff0*0.75){
+    info2("sde_fit: %d interations: %g->%g.\n", data.count, diff0, diff1);
+    //Scale to make sure total energy is preserved.
+    /*
+      if(diff1>0.2 && diff1>diff0*0.75){
 	static int count=0;
 	writebin(psdin, "sde_fit_psdin_%d_%g", count, tmax_fit);
 	writebin(coeff0,"sde_fit_coeff_%d_%g", count, tmax_fit);
@@ -237,7 +275,7 @@ static dmat* sde_fit_do(const dmat *psdin, const dmat *coeff0, double tmax_fit){
 	}
     }else{
 	info2("\n");
-    }
+	}*/
     dfree(freq);
     dfree(psdcov_in);
     dfree(psdcov_sde);
@@ -345,7 +383,7 @@ dmat* reccati(dmat **Pout, const dmat *A, const dmat *Qn, const dmat *C, const d
 	lastdiff=diff;
     }
     if(count>=maxcount){
-	warning_once("count=%d, diff=%g, diff2=%g, thres=%g\n", count, diff, diff2, thres);
+	warning_once("recatti: count=%d, diff=%g, diff2=%g, thres=%g\n", count, diff, diff2, thres);
     }
     dmat *Mout=0;
     dmm(&Mout, 0, CP, CPCt, "tn", 1);
@@ -383,7 +421,7 @@ dcell* reccati_cell(dmat **Pout, const dmat *A, const dmat *Qn, const dcell *Cs,
 	lastdiff=diff;
     }
     if(count>=maxcount){
-	warning_once("count=%d, diff=%g, diff2=%g, thres=%g\n", count, diff, diff2, thres);
+	warning_once("reccati: count=%d, diff=%g, diff2=%g, thres=%g\n", count, diff, diff2, thres);
     }
    
     for(ik=0; ik<nk; ik++){
@@ -409,10 +447,11 @@ dcell* reccati_cell(dmat **Pout, const dmat *A, const dmat *Qn, const dcell *Cs,
     return Mout;
 }
 #endif
-/*Kalman filter based on SDE model
- */
+/**
+   Kalman filter based on SDE model
+*/
 kalman_t* sde_kalman(const dmat *coeff, /**<SDE coefficients*/
-		     double dthi, /**<Loop frequency*/
+		     const double dthi, /**<Loop frequency*/
 		     const dmat *dtrat_wfs,   /**<WFS frequency as a fraction of loop*/
 		     const dcell *Gwfs,  /**<WFS measurement from modes. Can be identity*/
 		     const dcell *Rwfs,  /**<WFS measurement noise covariance*/
@@ -429,7 +468,7 @@ kalman_t* sde_kalman(const dmat *coeff, /**<SDE coefficients*/
     int nmod=nblock*order;/*number of modes in state*/
     dmat *Ac=dnew(nmod, nmod);
     dmat *Sigma_ep=dnew(nmod, nmod);
-    dmat *Pd0=dnew(nblock, nmod);
+    dmat *Pd0=dnew(nblock, nmod);//Project from state vector to state.
     for(int iblock=0; iblock<nblock; iblock++){
 	double *pcoeff=coeff->p+(order+1)*iblock;
 	double *Aci=Ac->p+iblock*order*(nmod+1);
@@ -704,9 +743,7 @@ dmat *kalman_test(kalman_t *kalman, dmat *input){
     dcell *acc=dcellnew3(nwfs, 1, ngs, 0);
     dcell *meas=dcellnew3(nwfs, 1, ngs, 0);
     int nmod=input->nx;
-    //dmat* pinput=input;
     dmat *mres=ddup(input);
-    //dmat*  pmres=mres;
     kalman_init(kalman);
     rand_t rstat;
     seed_rand(&rstat, 1);
@@ -718,7 +755,6 @@ dmat *kalman_test(kalman_t *kalman, dmat *input){
 	//outi->p=(double*)(pmres+istep);
 	dmat *outi=dnew_ref(nmod, 1, PCOL(mres, istep));
 	//ini=dnew_ref(nmod, 1, PCOL(input, istep));
-
 	kalman_output(kalman, &outi, 1, -1);
 	int indk=0;
 	for(int iwfs=0; iwfs<nwfs; iwfs++){

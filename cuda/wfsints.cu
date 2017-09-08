@@ -212,31 +212,29 @@ __global__ static void sa_embed_rot_do(Comp *restrict out, const int noutx, cons
     }
 } 
 /**
-   Multiple each OTF with another. 
+   Multiple one array with another. OTFs contains repeated arrays each with notf
+   numbers. if repeat is 1, dtfs is repeatd for each array.
 */
-__global__ static void sa_ccwm_do(Comp *otfs, const int notfx, const int notfy, 
-				  const Comp *dtfs, int each){
+template <typename T, typename P>
+__global__ static void sa_ccwm_do(T *otfs, const int notf, const P *dtfs, int repeat){
     const int isa=blockIdx.x;
-    int offset=notfx*notfy*isa;
-    Comp *restrict otf=otfs+offset;
-    const Comp *dtf=each?dtfs:(dtfs+offset);
-    for(int iy=threadIdx.y; iy<notfy; iy+=blockDim.y){
-	const int skip=iy*notfx;
-	for(int ix=threadIdx.x; ix<notfx; ix+=blockDim.x){
-	    otf[ix+skip]*=dtf[ix+skip];
-	}
+    int offset=notf*isa;
+    T *restrict otf=otfs+offset;
+    const P *dtf=repeat?dtfs:(dtfs+offset);
+    for(int ix=threadIdx.x; ix<notf; ix+=blockDim.x){
+	otf[ix]*=dtf[ix];
     }
 }
 /**
    Multiple each OTF with another. 
 */
-__global__ static void sa_ccwm_do(Comp *otfs, const int notfx, const int notfy, 
-				   const Comp *dtfs1, Real wt1, const Comp *dtfs2, Real wt2, int each){
+__global__ static void sa_ccwm2_do(Comp *otfs, const int notfx, const int notfy, 
+				   const Comp *dtfs1, Real wt1, const Comp *dtfs2, Real wt2, int repeat){
     const int isa=blockIdx.x;
     int offset=notfx*notfy*isa;
     Comp *restrict otf=otfs+offset;
-    const Comp *dtf1=each?dtfs1:(dtfs1+offset);
-    const Comp *dtf2=each?dtfs2:(dtfs2+offset);
+    const Comp *dtf1=repeat?dtfs1:(dtfs1+offset);
+    const Comp *dtf2=repeat?dtfs2:(dtfs2+offset);
     Comp temp;
     for(int iy=threadIdx.y; iy<notfy; iy+=blockDim.y){
 	const int skip=iy*notfx;
@@ -251,10 +249,10 @@ __global__ static void sa_ccwm_do(Comp *otfs, const int notfx, const int notfy,
    Multiple an otf with another 1-d otf along each column
 */
 __global__ static void sa_ccwmcol_do(Comp *otfs, const int notfx, const int notfy,
-				     const Comp *etfs, int each){
+				     const Comp *etfs, int repeat){
     const int isa=blockIdx.x;
     Comp *restrict otf=otfs+notfy*notfx*isa;
-    const Comp *restrict etf=each?etfs:(etfs+isa*notfx);
+    const Comp *restrict etf=repeat?etfs:(etfs+isa*notfx);
     for(int iy=threadIdx.y; iy<notfy; iy+=blockDim.y){
 	Comp *restrict otf2=otf+iy*notfx;
 	for(int ix=threadIdx.x; ix<notfx; ix+=blockDim.x){
@@ -267,11 +265,11 @@ __global__ static void sa_ccwmcol_do(Comp *otfs, const int notfx, const int notf
    Multiple an otf with another 1-d otf along each column
 */
 __global__ static void sa_ccwmcol_do(Comp *otfs, const int notfx, const int notfy,
-				     const Comp *etfs1, Real wt1, const Comp *etfs2, Real wt2, int each){
+				     const Comp *etfs1, Real wt1, const Comp *etfs2, Real wt2, int repeat){
     const int isa=blockIdx.x;
     Comp *restrict otf=otfs+notfy*notfx*isa;
-    const Comp *restrict etf1=each?etfs1:(etfs1+isa*notfx);
-    const Comp *restrict etf2=each?etfs2:(etfs2+isa*notfx);
+    const Comp *restrict etf1=repeat?etfs1:(etfs1+isa*notfx);
+    const Comp *restrict etf2=repeat?etfs2:(etfs2+isa*notfx);
     Comp temp;
     for(int iy=threadIdx.y; iy<notfy; iy+=blockDim.y){
 	Comp *restrict otf2=otf+iy*notfx;
@@ -357,16 +355,20 @@ __global__ static void sa_add_otf_tilt_corner_do(Comp *restrict otf, int nx, int
 }
 /**
    Do physical wfs images in GPU. please check wfsints() in CPU code for comments.
+
+   stream is no longer an input parameter, as the FFT plan depends on it.
 */
-void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim, cudaStream_t stream){
+void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim){
     TIC;tic;
     cuarray<cupowfs_t>&cupowfs=cudata->powfs;
     cuarray<cuwfs_t>&cuwfs=cudata->wfs;
+    stream_t &stream=cuwfs[iwfs].stream;
     const PARMS_T *parms=simu->parms;
     const POWFS_T *powfs=simu->powfs;
     const int ipowfs=parms->wfs[iwfs].powfs;
     const int wfsind=parms->powfs[ipowfs].wfsind->p[iwfs];
     const Real hs=parms->wfs[iwfs].hs;
+    const Real hc=parms->powfs[ipowfs].hc;
     const int nsa=powfs[ipowfs].saloc->nloc;
     const int ncompx=powfs[ipowfs].ncompx;/*necessary size to build detector image. */
     const int ncompy=powfs[ipowfs].ncompy;
@@ -414,7 +416,7 @@ void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim,
 	const double thetaxl=parms->wfs[iwfs].thetax-parms->powfs[ipowfs].llt->ox->p[illt]/hs;
 	const double thetayl=parms->wfs[iwfs].thetay-parms->powfs[ipowfs].llt->oy->p[illt]/hs;
 	gpu_atm2loc(lltopd, cupowfs[ipowfs].llt.loc,
-		    hs, thetaxl, thetayl, 
+		    hs, hc, thetaxl, thetayl, 
 		    parms->powfs[ipowfs].llt->misreg->p[0], 
 		    parms->powfs[ipowfs].llt->misreg->p[1], 
 		    parms->sim.dt, isim, 1, stream);
@@ -561,7 +563,7 @@ void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim,
 		    }
 		}
 		if(lltopd){/*multiply with uplink otf. */
-		    sa_ccwm_do<<<ksa,dim3(16,16),0,stream>>>(psf, notf, notf, lotfc, 1);
+		    sa_ccwm_do<<<ksa,256,0,stream>>>(psf, notf*notf, lotfc, 1);
 		    ctoc("ccwm with lotfc");
 		}
 		/* is OTF now. */
@@ -603,8 +605,8 @@ void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim,
 			sa_ccwmcol_do<<<ksa,dim3(16,16),0,stream>>>
 			    (otf, ncompx, ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), wt1, cuwfs[iwfs].dtf[iwvl].etf2.Col(isa), wt2, 0);
 		    }else{
-			sa_ccwm_do<<<ksa,dim3(16,16),0,stream>>>
-			    (otf, ncompx, ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), wt1, cuwfs[iwfs].dtf[iwvl].etf2.Col(isa), wt2, 0);
+			sa_ccwm2_do<<<ksa,dim3(16,16),0,stream>>>
+			    (otf, ncompx,ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), wt1, cuwfs[iwfs].dtf[iwvl].etf2.Col(isa), wt2, 0);
 		    }
 		    ctoc("ccwm2");
 		}else if(cuwfs[iwfs].dtf[iwvl].etf){
@@ -613,24 +615,24 @@ void gpu_wfsints(SIM_T *simu, Real *phiout, curmat &gradref, int iwfs, int isim,
 			sa_ccwmcol_do<<<ksa,dim3(16,16),0,stream>>>
 			    (otf, ncompx, ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), 0);
 		    }else{
-			sa_ccwm_do<<<ksa,dim3(16,16),0,stream>>>
-			    (otf, ncompx, ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), 0);
+			sa_ccwm_do<<<ksa,256,0,stream>>>
+			    (otf, ncompx*ncompy, cuwfs[iwfs].dtf[iwvl].etf.Col(isa), 0);
 		    }
 		    ctoc("ccwm");
 		}
 		/*multiply with nominal */
 		if(cuwfs[iwfs].dtf[iwvl].nominal){
-		    int each=0;
+		    int repeat=0;
 		    Comp *pnominal=0;
 		    if(cuwfs[iwfs].dtf[iwvl].nominal.Ny()==1){
-			each=1;
+			repeat=1;
 			pnominal=cuwfs[iwfs].dtf[iwvl].nominal.Col(0);
 		    }else{
-			each=0;
+			repeat=0;
 			pnominal=cuwfs[iwfs].dtf[iwvl].nominal.Col(isa);
 		    }
-		    sa_ccwm_do<<<ksa,dim3(16,16),0,stream>>>
-			(otf, ncompx, ncompy, pnominal, each);
+		    sa_ccwm_do<<<ksa, 256,0,stream>>>
+			(otf, ncompx*ncompy, pnominal, repeat);
 		    ctoc("nominal");
 		}
 		/*back to spatial domain. */
