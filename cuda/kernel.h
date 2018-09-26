@@ -33,7 +33,9 @@ __device__ inline float atomicAdd(float* address, float val)
 }
 #endif
 */
-#if !defined( __CUDA_ARCH__ ) || __CUDA_ARCH__ <600
+#if !defined( __CUDA_ARCH__ ) || __CUDA_ARCH__  >= 600
+
+#else
 __device__ inline double atomicAdd(double* address, double val)
 {
     double old = *address;
